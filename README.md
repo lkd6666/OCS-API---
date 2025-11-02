@@ -9,7 +9,15 @@
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![AI Maintained](https://img.shields.io/badge/Maintained%20by-AI-00D9FF.svg)
 
-一个专为OCS网课助手设计的智能答题API，支持DeepSeek、豆包等多个大语言模型，提供强大的AI答题能力。
+一个专为[OCS网课助手](https://docs.ocsjs.com/)设计的智能答题API，支持DeepSeek、豆包等多个大语言模型，提供强大的AI答题能力。
+
+> 📌 **关于 OCS**
+> 
+> [OCS (Online Course Script)](https://docs.ocsjs.com/) 是一款功能强大的网课助手脚本，支持超星学习通、智慧树、职教云等多个平台。本项目为 OCS 提供 AI 智能答题能力。
+> 
+> - 🌐 官方网站：https://docs.ocsjs.com/
+> - 📦 脚本安装：https://docs.ocsjs.com/docs/work
+> - 💬 交流社区：https://docs.ocsjs.com/
 
 ---
 
@@ -164,7 +172,46 @@ python ocs_ai_answerer_advanced.py
 
 ### 4. 配置OCS脚本
 
-在OCS脚本的"通用-全局设置-题库配置"中，导入 `ocs_config.json`
+#### 方式一：安装OCS脚本（推荐）
+
+如果还未安装 OCS 脚本，请先安装：
+
+1. **安装脚本管理器**（推荐脚本猫）
+   - Chrome/Edge：安装 [脚本猫(ScriptCat)](https://scriptcat.org/) 或 [Tampermonkey](https://www.tampermonkey.net/)
+   - Firefox：安装 [脚本猫](https://scriptcat.org/) 或 [Tampermonkey](https://addons.mozilla.org/firefox/addon/tampermonkey/)
+   - Safari：安装 [Userscripts](https://apps.apple.com/app/userscripts/id1463298887)
+   
+   > 💡 **推荐使用脚本猫**：国内开发，速度快，功能强大，更适合国内网络环境
+
+2. **安装 OCS 脚本**
+   - 访问 [OCS 官网](https://docs.ocsjs.com/docs/work)
+   - 或直接在脚本管理器中添加本项目的 `ocs.user.js` 文件（包含标签兼容性优化）
+
+3. **配置题库**
+   - 在OCS脚本的"通用-全局设置-题库配置"中
+   - 导入 `ocs_config.json` 文件
+
+> 💡 **推荐使用项目提供的 `ocs.user.js`**
+> 
+> 本项目的 `ocs.user.js` 已针对 AI 答题功能进行优化，包含：
+> - ✅ 支持 `purple` 和 `orange` 标签颜色（深度思考、自动思考标识）
+> - ✅ 更好的 AI 答题标签显示
+> - ✅ 完整的题库超时配置（3分钟）
+> 
+> **安装方法：**
+> 1. 打开脚本管理器（脚本猫或Tampermonkey）
+> 2. 点击"添加新脚本"或"新建脚本"
+> 3. 将 `ocs.user.js` 的内容粘贴进去
+> 4. 保存并启用
+> 
+> 或者直接从文件安装：
+> 1. 下载项目中的 `ocs.user.js` 文件
+> 2. 在脚本管理器中选择"从本地安装"
+> 3. 选择下载的 `ocs.user.js` 文件
+
+#### 方式二：仅配置题库（已安装OCS用户）
+
+如果已经安装了 OCS 脚本，只需导入题库配置即可。
 
 ## 📦 安装步骤
 
@@ -390,6 +437,12 @@ CSV_LOG_FILE=ocs_answers_log.csv  # CSV日志文件路径
 
 ## 🔧 配置OCS脚本
 
+### 前置要求
+
+确保已安装 OCS 脚本。如果还没有安装，请参考 [快速开始 - 第4步](#4-配置ocs脚本)。
+
+> 💡 **提示**：推荐使用本项目提供的 `ocs.user.js`，已包含 AI 答题的标签兼容性优化。
+
 ### 导入配置文件
 
 1. 打开OCS脚本悬浮窗
@@ -433,6 +486,40 @@ CSV_LOG_FILE=ocs_answers_log.csv  # CSV日志文件路径
 配置成功后，进入任意作业/考试页面，OCS应该显示：
 
 > ✅ 当前有1个可用题库：AI智能答题
+
+### OCS 脚本标签兼容性
+
+如果使用官方原版 OCS 脚本，可能不支持 `purple` 和 `orange` 标签颜色。建议：
+
+1. **使用项目提供的 `ocs.user.js`**（推荐）
+   - 已包含所有标签颜色支持
+   - 题库超时设置为3分钟
+   - 完美兼容 AI 答题功能
+
+2. **或修改现有 OCS 脚本**
+   - 在 OCS 脚本中添加以下 CSS（搜索 `.search-result-answer-tag` 部分）：
+   ```css
+   .search-result-answer-tag.purple {
+     background-color: #9b59b6;
+     color: white;
+   }
+   .search-result-answer-tag.orange {
+     background-color: #e67e22;
+     color: white;
+   }
+   ```
+
+### 标签说明
+
+使用本项目的 AI 答题时，会显示以下标签：
+
+| 标签 | 颜色 | 说明 |
+|------|------|------|
+| AI | 🔵 蓝色 | OCS自动添加，表示AI答题 |
+| 深度思考 | 🟣 紫色 | 使用思考模式（需兼容脚本）|
+| 自动思考 | 🟠 橙色 | 多选题自动启用思考（需兼容脚本）|
+| 智能选择 | 🔵 蓝色 | 智能模型选择模式 |
+| DEEPSEEK/DOUBAO | 🟢 绿色 | 实际使用的模型 |
 
 ## 📚 API文档
 
@@ -1002,6 +1089,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - 项目主页：https://github.com/lkd6666/OCS-API---
 - 问题反馈：https://github.com/lkd6666/OCS-API---/issues
+- OCS 官网：https://docs.ocsjs.com/
+- OCS 文档：https://docs.ocsjs.com/docs/work
 
 ---
 
