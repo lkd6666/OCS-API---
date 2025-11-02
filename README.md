@@ -1,12 +1,17 @@
-# OCS智能答题API - 多模型支持版本
+# OCS AI Answerer
+
+## OCS智能答题API - 多模型支持版本
 
 <div align="center">
+
+[![GitHub Stars](https://img.shields.io/github/stars/lkd6666/ocs-ai-answerer?style=social)](https://github.com/lkd6666/ocs-ai-answerer/stargazers)
+[![GitHub Issues](https://img.shields.io/github/issues/lkd6666/ocs-ai-answerer)](https://github.com/lkd6666/ocs-ai-answerer/issues)
+[![GitHub License](https://img.shields.io/github/license/lkd6666/ocs-ai-answerer)](https://github.com/lkd6666/ocs-ai-answerer/blob/main/LICENSE)
 
 ![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
 ![Flask](https://img.shields.io/badge/Flask-3.0-green.svg)
 ![DeepSeek](https://img.shields.io/badge/DeepSeek-AI-orange.svg)
 ![Doubao](https://img.shields.io/badge/Doubao-AI-purple.svg)
-![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![AI Maintained](https://img.shields.io/badge/Maintained%20by-AI-00D9FF.svg)
 
 一个专为[OCS网课助手](https://docs.ocsjs.com/)设计的智能答题API，支持DeepSeek、豆包等多个大语言模型，提供强大的AI答题能力。
@@ -226,8 +231,8 @@ python ocs_ai_answerer_advanced.py
 1. **克隆或下载项目**
 
 ```bash
-git clone https://github.com/lkd6666/OCS-API---.git
-cd OCS-API---
+git clone https://github.com/lkd6666/ocs-ai-answerer.git
+cd ocs-ai-answerer
 ```
 
 2. **创建虚拟环境（推荐）**
@@ -461,7 +466,7 @@ CSV_LOG_FILE=ocs_answers_log.csv  # CSV日志文件路径
   "method": "post",
   "type": "fetch",
   "contentType": "json",
-  "homepage": "https://github.com/yourname/ocs-ai-answerer",
+  "homepage": "https://github.com/lkd6666/ocs-ai-answerer",
   "headers": {
     "Content-Type": "application/json"
   },
@@ -1087,10 +1092,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ## 📧 联系方式
 
-- 项目主页：https://github.com/lkd6666/OCS-API---
-- 问题反馈：https://github.com/lkd6666/OCS-API---/issues
-- OCS 官网：https://docs.ocsjs.com/
-- OCS 文档：https://docs.ocsjs.com/docs/work
+- 📦 项目主页：https://github.com/lkd6666/ocs-ai-answerer
+- 🐛 问题反馈：https://github.com/lkd6666/ocs-ai-answerer/issues
+- ⭐ 给个Star：https://github.com/lkd6666/ocs-ai-answerer/stargazers
+- 🌐 OCS 官网：https://docs.ocsjs.com/
+- 📖 OCS 文档：https://docs.ocsjs.com/docs/work
 
 ---
 
