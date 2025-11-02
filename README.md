@@ -47,6 +47,7 @@
 - **多模型支持**：DeepSeek、豆包(Doubao)等多个大语言模型
 - **思考模式**：支持DeepSeek Reasoner和豆包深度思考模式
 - **多选题智能**：多选题自动启用深度思考，提高准确率
+- **图片题智能**：带图片题目自动启用深度思考，提高识别准确率
 - **智能理解**：强大的自然语言理解能力
 
 ### 🎯 题型支持
@@ -57,7 +58,8 @@
 
 ### 🖼️ 多模态支持
 - **图片识别**：豆包模型支持图片+文本混合输入
-- **自动提取**：从题目中自动提取图片URL
+- **自动提取**：从题干和选项中自动提取图片URL
+- **智能思考**：带图片题目自动启用深度思考模式
 - **智能降级**：图片访问失败时自动切换纯文本模式
 
 ### 📊 数据记录
@@ -144,6 +146,7 @@ DOUBAO_MODEL=doubao-seed-1-6-251015        # 👈 填入你的接入点ID
 # 思考模式（推荐配置）
 ENABLE_REASONING=false
 AUTO_REASONING_FOR_MULTIPLE=true  # 多选题自动启用
+AUTO_REASONING_FOR_IMAGES=true    # 图片题自动启用（推荐）
 ```
 
 
@@ -169,6 +172,7 @@ python ocs_ai_answerer_advanced.py
 ║  当前模型: DEEPSEEK - deepseek-chat                     ║
 ║  思考模式: ❌ 未启用                                   ║
 ║  多选题思考: ✅ 自动启用                              ║
+║  图片题思考: ✅ 自动启用                              ║
 ║  支持题型: 单选、多选、判断、填空                        ║
 ╚═══════════════════════════════════════════════════════════╝
 
@@ -280,6 +284,26 @@ cp env.template .env
 python ocs_ai_answerer_advanced.py
 ```
 
+### 🎁 打包成EXE（可选）
+
+如需制作便携版exe文件，方便在其他电脑使用：
+
+```bash
+# 方法1：使用自动打包脚本（推荐）
+python build_exe.py
+
+# 或双击运行（Windows）
+build_exe.bat
+
+# 方法2：手动打包
+pip install pyinstaller
+pyinstaller --onefile --name=OCS-AI-Answerer ocs_ai_answerer_advanced.py
+```
+
+打包完成后：
+- 可执行文件位置：`dist/OCS-AI-Answerer.exe`
+- 详细说明：查看 [BUILD_GUIDE.md](BUILD_GUIDE.md)
+
 ## ⚙️ 配置说明
 
 ### 🔑 API密钥获取（详细步骤）
@@ -354,6 +378,9 @@ ENABLE_REASONING=false
 # 多选题自动启用深度思考（推荐开启）
 AUTO_REASONING_FOR_MULTIPLE=true
 
+# 带图片题目自动启用深度思考（推荐开启）
+AUTO_REASONING_FOR_IMAGES=true
+
 # 豆包思考强度（low/medium/high）
 REASONING_EFFORT=medium
 ```
@@ -362,6 +389,7 @@ REASONING_EFFORT=medium
 - **普通模式**：快速响应，适合简单题目，使用 `MAX_TOKENS`
 - **思考模式**：深度推理，答案更准确但耗时更长，使用 `REASONING_MAX_TOKENS`
 - **多选题自动思考**：仅对多选题启用，平衡速度和准确率
+- **图片题自动思考**：仅对带图片题目启用，提高图片识别准确率
 
 > 💡 **为什么需要单独配置思考模式的 token？**
 > 
@@ -384,7 +412,7 @@ TOP_P=0.95                   # 核采样参数
 |------|------|--------|----------|
 | **TEMPERATURE** | 0.0-2.0 | 0.1 | **控制答案的随机性和创造性**<br>• 0.0-0.3：确定性高，适合答题（推荐）<br>• 0.4-0.7：平衡，适合对话<br>• 0.8-2.0：创造性高，答案多样但可能不准确 |
 | **MAX_TOKENS** | 1-8192 | 500 | **普通模式的最大输出长度**<br>• 填空题：200-300 足够<br>• 选择题：300-500 合适<br>• 复杂题目：可增加到 1000+<br>• deepseek-chat 最大：8192 |
-| **REASONING_MAX_TOKENS** | 1-65536 | 4096 | **思考模式的最大输出长度**<br>• 简单思考：2000-4000<br>• 中等复杂：4096-8000（推荐）<br>• 复杂推理：8000-16000<br>• deepseek-reasoner 最大：65536 |
+| **REASONING_MAX_TOKENS** | 1-65536 | 4096 | **思考模式的最大输出长度**<br>• 简单思考：2000-4000<br>• 中等复杂：4096-8000（推荐）<br>• 复杂推理：8000-16000<br>• 图片题：建议4096+（推荐）<br>• deepseek-reasoner 最大：65536 |
 | **TOP_P** | 0.0-1.0 | 0.95 | **核采样，控制词汇选择范围**<br>• 0.9-1.0：词汇丰富，表达多样（推荐）<br>• 0.5-0.8：更保守，重复性增加<br>• 0.1-0.4：非常保守，可能过于机械 |
 
 **答题场景推荐配置：**
@@ -629,6 +657,7 @@ Response:
   "model": "deepseek-chat",
   "reasoning_enabled": false,
   "auto_reasoning_for_multiple": true,
+  "auto_reasoning_for_images": true,
   "reasoning_effort": null,
   "temperature": 0.1,
   "max_tokens": 500
@@ -683,22 +712,29 @@ MODEL_PROVIDER=deepseek  # 或 doubao
 ### 2. 思考模式
 
 #### 自动启用策略
-- **多选题**：自动启用深度思考（可配置）
-- **单选/判断/填空**：使用普通模式（除非全局启用）
+- **多选题**：自动启用深度思考（可配置 `AUTO_REASONING_FOR_MULTIPLE`）
+- **图片题**：自动启用深度思考（可配置 `AUTO_REASONING_FOR_IMAGES`）
+- **单选/判断/填空（无图片）**：使用普通模式（除非全局启用）
 
 #### 标签展示
 在OCS界面中会显示：
 - 🔵 **AI** - OCS自动添加
 - 🟣 **深度思考** - 使用思考模式时显示
-- 🟡 **自动思考** - 多选题自动启用时显示
+- 🟡 **自动思考** - 多选题或图片题自动启用时显示
 - 🟢 **DEEPSEEK/DOUBAO** - 模型标识
 
 ### 3. 图片支持（豆包）
 
 #### 自动提取
-从题目文本中自动提取图片URL：
+从题干和选项中自动提取图片URL：
 - 支持格式：jpg, jpeg, png, gif, bmp, webp
 - 自动去重
+- 同时检测题干和选项中的图片
+
+#### 智能思考
+- 检测到图片时自动启用深度思考模式（可配置 `AUTO_REASONING_FOR_IMAGES`）
+- 提高图片识别和理解准确率
+- 支持多选题+图片题同时触发
 
 #### 智能过滤
 过滤无关图标URL：
@@ -839,12 +875,18 @@ MODEL_PROVIDER=deepseek  # 或 doubao
 ```env
 ENABLE_REASONING=false              # 全局不启用（节省成本）
 AUTO_REASONING_FOR_MULTIPLE=true    # 多选题自动启用（提高准确率）
+AUTO_REASONING_FOR_IMAGES=true      # 图片题自动启用（提高识别准确率）
 ```
 
 **全局启用思考模式**会：
 - ✅ 显著提高答案准确率
 - ❌ 增加API调用耗时
 - ❌ 增加API调用成本
+
+**自动思考模式**（推荐）：
+- ✅ 只在需要时启用（多选题、图片题）
+- ✅ 平衡准确率和成本
+- ✅ 自动判断，无需手动配置
 
 ### Q3: API返回"Connection error"
 
@@ -908,11 +950,14 @@ del ocs_answers_log.csv  # Windows
 ### Q7: 如何提高答题准确率？
 
 **策略：**
-1. **启用思考模式**：`ENABLE_REASONING=true`
-2. **多选题自动思考**：`AUTO_REASONING_FOR_MULTIPLE=true`（默认）
+1. **启用自动思考**：
+   - `AUTO_REASONING_FOR_MULTIPLE=true`（多选题，默认开启）
+   - `AUTO_REASONING_FOR_IMAGES=true`（图片题，默认开启）
+2. **全局思考模式**（可选）：`ENABLE_REASONING=true`（所有题目）
 3. **降低温度**：`TEMPERATURE=0.05`（更保守）
 4. **使用豆包**：图片题目准确率更高
-5. **优化Prompt**：根据学科调整Prompt
+5. **智能模型选择**：`MODEL_PROVIDER=auto`（自动选择最优模型）
+6. **优化Prompt**：根据学科调整Prompt
 
 ### Q8: 服务器部署
 
@@ -1043,6 +1088,12 @@ IMAGE_MODEL=doubao               # 图片题目使用的模型
 - 🌐 **Web管理界面**：图形化配置和管理界面
 
 ## 📝 更新日志
+
+### v2.2.0 (2025-11-02)
+- 🖼️ **图片题自动思考**：带图片题目自动启用深度思考模式
+- 📷 **选项图片检测**：从选项中提取图片URL，完善图片检测
+- ⚙️ **配置增强**：新增 `AUTO_REASONING_FOR_IMAGES` 配置项
+- 📝 **文档更新**：完整的图片题思考模式说明
 
 ### v2.1.0 (2025-11-02)
 - 🤖 **智能模型选择**：根据题目自动选择最合适的模型
