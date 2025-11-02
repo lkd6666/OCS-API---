@@ -226,7 +226,7 @@ python ocs_ai_answerer_advanced.py
 1. **克隆或下载项目**
 
 ```bash
-[https://github.com/yourname/ocs-ai-answerer.git](https://github.com/lkd6666/OCS-API---.git)
+git clone https://github.com/lkd6666/OCS-API---.git
 cd OCS-API---
 ```
 
