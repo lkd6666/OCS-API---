@@ -1,10 +1,10 @@
 {
-  "name": "DeepSeek AI智能答题",
+  "name": "AI智能答题",
   "url": "http://localhost:5000/api/answer",
   "method": "post",
   "type": "fetch",
   "contentType": "json",
-  "homepage": "https://github.com/yourname/ocs-ai-answerer",
+  "homepage": "https://github.com/lkd6666/ocs-ai-answerer",
   "headers": {
     "Content-Type": "application/json"
   },
