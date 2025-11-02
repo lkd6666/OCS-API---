@@ -179,8 +179,8 @@ python ocs_ai_answerer_advanced.py
 1. **克隆或下载项目**
 
 ```bash
-git clone https://github.com/yourname/ocs-ai-answerer.git
-cd ocs-ai-answerer
+[https://github.com/yourname/ocs-ai-answerer.git](https://github.com/lkd6666/OCS-API---.git)
+cd OCS-API---
 ```
 
 2. **创建虚拟环境（推荐）**
@@ -1000,14 +1000,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ## 📧 联系方式
 
-- 项目主页：https://github.com/yourname/ocs-ai-answerer
-- 问题反馈：https://github.com/yourname/ocs-ai-answerer/issues
+- 项目主页：https://github.com/lkd6666/OCS-API---
+- 问题反馈：https://github.com/lkd6666/OCS-API---/issues
 
 ---
 
 <div align="center">
 
-⭐ 如果这个项目对你有帮助，请给个星标支持一下！⭐
+⭐ 如果这个项目对你有帮助，请给个star支持一下！⭐
 
 **主要特性**
 🤖 多模型 | 🧠 深度思考 | 🖼️ 图片识别 | 📊 数据可视化
