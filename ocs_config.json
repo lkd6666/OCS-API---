@@ -1,0 +1,25 @@
+{
+  "name": "DeepSeek AI智能答题",
+  "url": "http://localhost:5000/api/answer",
+  "method": "post",
+  "type": "fetch",
+  "contentType": "json",
+  "homepage": "https://github.com/yourname/ocs-ai-answerer",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "data": {
+    "question": "${title}",
+    "options": {
+      "handler": "return (env)=>env.options?.split('\\n')"
+    },
+    "type": {
+      "handler": "return (env)=> env.type === 'single' ? 0 : env.type === 'multiple' ? 1 : env.type === 'completion' ? 3 : env.type === 'judgement' ? 4 : 0"
+    },
+    "images": {
+      "handler": "return (env)=> { const imgPattern = /https?:\\/\\/[^\\s]+\\.(?:jpg|jpeg|png|gif|bmp|webp)/gi; return env.title?.match(imgPattern) || []; }"
+    }
+  },
+  "handler": "return (res)=>res.success && res.ocs_format ? [res.ocs_format] : []"
+}
+
