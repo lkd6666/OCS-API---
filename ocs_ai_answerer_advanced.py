@@ -46,6 +46,7 @@ DOUBAO_MODEL = os.getenv('DOUBAO_MODEL', 'doubao-seed-1-6-251015')
 ENABLE_REASONING = os.getenv('ENABLE_REASONING', 'false').lower() == 'true'
 REASONING_EFFORT = os.getenv('REASONING_EFFORT', 'medium')  # low, medium, high
 AUTO_REASONING_FOR_MULTIPLE = os.getenv('AUTO_REASONING_FOR_MULTIPLE', 'true').lower() == 'true'
+AUTO_REASONING_FOR_IMAGES = os.getenv('AUTO_REASONING_FOR_IMAGES', 'true').lower() == 'true'  # 带图片题目自动启用深度思考
 
 # AI参数配置
 TEMPERATURE = float(os.getenv('TEMPERATURE', '0.1'))
@@ -109,6 +110,7 @@ class ModelClient:
         self.enable_reasoning = ENABLE_REASONING
         self.reasoning_effort = REASONING_EFFORT
         self.auto_reasoning_for_multiple = AUTO_REASONING_FOR_MULTIPLE
+        self.auto_reasoning_for_images = AUTO_REASONING_FOR_IMAGES
         
         # 智能模式相关
         self.is_auto_mode = (self.provider == 'auto')
@@ -239,7 +241,7 @@ class ModelClient:
         if not self.is_auto_mode:
             logger.info(f"✅ 已初始化 {self.provider} 客户端，模型: {self.model}, 超时: {TIMEOUT}秒, 最大重试: {MAX_RETRIES}次")
     
-    def chat(self, prompt: str, force_reasoning: bool = False, image_urls: List[str] = None) -> Tuple[Optional[str], Optional[str]]:
+    def chat(self, prompt: str, force_reasoning: bool = False, image_urls: List[str] = None) -> Tuple[Optional[str], Optional[str], Optional[Dict[str, int]]]:
         """
         调用模型进行对话（带重试机制，支持智能模型选择）
         
@@ -249,7 +251,8 @@ class ModelClient:
             image_urls: 图片URL列表（仅豆包支持）
         
         Returns:
-            (推理过程, 最终答案) 或 (None, 答案)
+            (推理过程, 最终答案, token使用量) 或 (None, 答案, token使用量)
+            token使用量格式: {"prompt_tokens": int, "completion_tokens": int, "total_tokens": int}
         """
         # 确定是否使用思考模式
         use_reasoning = self.enable_reasoning or force_reasoning
@@ -364,7 +367,19 @@ class ModelClient:
                 answer = response.choices[0].message.content.strip()
                 logger.info(f"模型返回答案: {answer}")
                 
-                return reasoning_content, answer
+                # 提取token使用量
+                usage_info = None
+                if hasattr(response, 'usage'):
+                    usage_info = {
+                        'prompt_tokens': response.usage.prompt_tokens if hasattr(response.usage, 'prompt_tokens') else 0,
+                        'completion_tokens': response.usage.completion_tokens if hasattr(response.usage, 'completion_tokens') else 0,
+                        'total_tokens': response.usage.total_tokens if hasattr(response.usage, 'total_tokens') else 0
+                    }
+                    logger.debug(f"Token使用量: 输入={usage_info['prompt_tokens']}, 输出={usage_info['completion_tokens']}, 总计={usage_info['total_tokens']}")
+                else:
+                    usage_info = {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
+                
+                return reasoning_content, answer, usage_info
                 
             except Exception as e:
                 last_error = e
@@ -435,7 +450,7 @@ class ModelClient:
         
         # 理论上不会执行到这里
         logger.error(f"模型调用失败: {last_error}")
-        return None, None
+        return None, None, None
     
     def _select_model(self, image_urls: List[str] = None) -> Tuple[str, Optional[Any], Optional[str]]:
         """
@@ -882,7 +897,8 @@ def format_time(seconds: float) -> str:
 
 def save_to_csv(question: str, options: List[str], q_type: str, raw_answer: str, 
                 reasoning: Optional[str], processed_answer: str, ai_time: float, 
-                total_time: float, model_name: str, reasoning_used: bool):
+                total_time: float, model_name: str, reasoning_used: bool,
+                prompt_tokens: int = 0, completion_tokens: int = 0, provider: str = ''):
     """
     保存答题记录到CSV文件
     
@@ -897,13 +913,17 @@ def save_to_csv(question: str, options: List[str], q_type: str, raw_answer: str,
         total_time: 总耗时（秒）
         model_name: 模型名称
         reasoning_used: 是否使用了思考模式
+        prompt_tokens: 输入token数
+        completion_tokens: 输出token数
+        provider: 模型提供商 (deepseek/doubao)
     """
     csv_file = os.getenv('CSV_LOG_FILE', 'ocs_answers_log.csv')
     
     # CSV表头
     headers = [
         '时间戳', '题型', '题目', '选项', '原始回答', '思考过程', 
-        '处理后答案', 'AI耗时(秒)', '总耗时(秒)', '模型', '思考模式'
+        '处理后答案', 'AI耗时(秒)', '总耗时(秒)', '模型', '思考模式',
+        '输入Token', '输出Token', '总Token', '费用(元)', '提供商'
     ]
     
     # 检查文件是否存在，如果不存在则创建并写入表头
@@ -923,6 +943,29 @@ def save_to_csv(question: str, options: List[str], q_type: str, raw_answer: str,
             options_str = ' | '.join(options) if options else ''
             reasoning_str = reasoning if reasoning else ''
             
+            # 计算费用（基于DeepSeek和豆包的官方价格）
+            # DeepSeek: 输入缓存命中0.2元/百万tokens，缓存未命中2元/百万tokens，输出3元/百万tokens
+            # 豆包-Seed-1.6: 推理输入0.8元/百万tokens，推理输出2元/百万tokens
+            # 注意：这里假设缓存未命中（实际应该根据缓存状态判断）
+            cost = 0.0
+            if provider.lower() == 'deepseek':
+                # DeepSeek价格（假设缓存未命中）
+                input_cost = (prompt_tokens / 1000000) * 2.0  # 2元/百万tokens
+                output_cost = (completion_tokens / 1000000) * 3.0  # 3元/百万tokens
+                cost = input_cost + output_cost
+            elif provider.lower() == 'doubao':
+                # 豆包-Seed-1.6 官方价格
+                input_cost = (prompt_tokens / 1000000) * 0.8  # 0.8元/百万tokens
+                output_cost = (completion_tokens / 1000000) * 2.0  # 2元/百万tokens
+                cost = input_cost + output_cost
+            else:
+                # 未知提供商，使用默认价格（参考DeepSeek）
+                input_cost = (prompt_tokens / 1000000) * 2.0
+                output_cost = (completion_tokens / 1000000) * 3.0
+                cost = input_cost + output_cost
+            
+            total_tokens = prompt_tokens + completion_tokens
+            
             # 写入数据行（所有字段都会被正确转义）
             row = [
                 timestamp,
@@ -935,7 +978,12 @@ def save_to_csv(question: str, options: List[str], q_type: str, raw_answer: str,
                 f"{ai_time:.2f}",
                 f"{total_time:.2f}",
                 model_name,
-                '是' if reasoning_used else '否'
+                '是' if reasoning_used else '否',
+                str(prompt_tokens),
+                str(completion_tokens),
+                str(total_tokens),
+                f"{cost:.6f}",
+                provider.upper() if provider else ''
             ]
             
             writer.writerow(row)
@@ -992,6 +1040,16 @@ def answer_question():
         img_pattern = r'(https?://[^\s]+\.(?:jpg|jpeg|png|gif|bmp|webp))'
         found_images = re.findall(img_pattern, question, re.IGNORECASE)
         image_urls.extend(found_images)
+        
+        # 从选项中提取图片URL
+        found_images_in_options = []
+        if options:
+            options_text = ' '.join(str(opt) for opt in options)
+            found_images_in_options = re.findall(img_pattern, options_text, re.IGNORECASE)
+            if found_images_in_options:
+                logger.info(f"📷 从选项中检测到 {len(found_images_in_options)} 张图片")
+                image_urls.extend(found_images_in_options)
+        
         image_urls = list(dict.fromkeys(image_urls))  # 去重
         
         # 过滤掉明显的图标URL（通常不是题目内容）
@@ -1012,8 +1070,13 @@ def answer_question():
         
         image_urls = filtered_image_urls
         
+        # 记录图片检测结果
+        total_found = len(found_images) + len(found_images_in_options) + len([img for img in (images or []) if img])
+        if total_found > 0:
+            logger.info(f"📷 图片检测结果: 题干{len(found_images)}张, 选项{len(found_images_in_options)}张, API传入{len(images or [])}张, 过滤后{len(image_urls)}张")
+        
         # 如果过滤后没有图片，记录日志
-        if len(image_urls) == 0 and len([img for img in (images or []) if img] + found_images) > 0:
+        if len(image_urls) == 0 and total_found > 0:
             logger.debug("所有图片URL已被过滤（可能都是图标），使用纯文本模式")
         
         # 控制台输出题目信息
@@ -1023,7 +1086,9 @@ def answer_question():
         if options:
             print(f"选项: {' | '.join(options)}")
         if image_urls:
-            print(f"📷 图片: {len(image_urls)}张")
+            print(f"📷 检测到图片: {len(image_urls)}张")
+            if found_images_in_options and len(found_images_in_options) > 0:
+                print(f"   ⚠️  选项中有图片，将自动使用豆包模型")
             for i, img_url in enumerate(image_urls, 1):
                 print(f"   {i}. {img_url}")
         print("="*80)
@@ -1033,13 +1098,23 @@ def answer_question():
         
         # 多选题自动启用思考模式
         force_reasoning = False
+        reasoning_reasons = []
+        
         if q_type == "multiple" and model_client.auto_reasoning_for_multiple:
             force_reasoning = True
-            print("🧠 多选题自动启用深度思考模式")
+            reasoning_reasons.append("多选题")
+        
+        # 带图片题目自动启用思考模式
+        if image_urls and model_client.auto_reasoning_for_images:
+            force_reasoning = True
+            reasoning_reasons.append("图片题")
+        
+        if force_reasoning and reasoning_reasons:
+            print(f"🧠 {' + '.join(reasoning_reasons)}自动启用深度思考模式")
         
         # 调用模型（计时）
         ai_start = time.time()
-        reasoning, raw_answer = model_client.chat(
+        reasoning, raw_answer, usage_info = model_client.chat(
             prompt, 
             force_reasoning=force_reasoning,
             image_urls=image_urls if image_urls else None
@@ -1049,6 +1124,13 @@ def answer_question():
         if not raw_answer:
             print(f"❌ 答题失败: AI未返回答案")
             return jsonify({"success": False, "error": "AI答题失败"}), 500
+        
+        # 提取token使用量
+        prompt_tokens = 0
+        completion_tokens = 0
+        if usage_info:
+            prompt_tokens = usage_info.get('prompt_tokens', 0)
+            completion_tokens = usage_info.get('completion_tokens', 0)
         
         # 处理答案
         processed_answer = AnswerProcessor.process_answer(raw_answer, q_type, options)
@@ -1076,6 +1158,14 @@ def answer_question():
             model_name = model_client.model if not force_reasoning else ('deepseek-reasoner' if model_client.provider == 'deepseek' else model_client.model)
         
         reasoning_used = force_reasoning or model_client.enable_reasoning
+        
+        # 确定提供商
+        actual_provider = ''
+        if model_client.is_auto_mode:
+            actual_provider = model_client._select_model(image_urls if image_urls else None)[0]
+        else:
+            actual_provider = model_client.provider
+        
         save_to_csv(
             question=question,
             options=options,
@@ -1086,7 +1176,10 @@ def answer_question():
             ai_time=ai_time,
             total_time=total_time,
             model_name=model_name,
-            reasoning_used=reasoning_used
+            reasoning_used=reasoning_used,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            provider=actual_provider
         )
         
         # 构建响应（OCS脚本格式：返回[题目, 答案, extra_data]）
@@ -1249,6 +1342,7 @@ def get_config():
         "model": model_client.model if model_client else None,
         "reasoning_enabled": ENABLE_REASONING,
         "auto_reasoning_for_multiple": AUTO_REASONING_FOR_MULTIPLE,
+        "auto_reasoning_for_images": AUTO_REASONING_FOR_IMAGES,
         "reasoning_effort": REASONING_EFFORT if ENABLE_REASONING else None,
         "temperature": TEMPERATURE,
         "max_tokens": MAX_TOKENS
@@ -1299,7 +1393,8 @@ def clear_csv():
         # CSV表头
         headers = [
             '时间戳', '题型', '题目', '选项', '原始回答', '思考过程', 
-            '处理后答案', 'AI耗时(秒)', '总耗时(秒)', '模型', '思考模式'
+            '处理后答案', 'AI耗时(秒)', '总耗时(秒)', '模型', '思考模式',
+            '输入Token', '输出Token', '总Token', '费用(元)', '提供商'
         ]
         
         # 写入空文件（只保留表头）
@@ -1383,6 +1478,7 @@ if __name__ == '__main__':
     ║  {'  ' + model_detail if model_detail else '':<60s}║
     ║  思考模式: {'✅ 已启用' if ENABLE_REASONING else '❌ 未启用':<40s}║
     ║  多选题思考: {'✅ 自动启用' if AUTO_REASONING_FOR_MULTIPLE else '❌ 关闭':<38s}║
+    ║  图片题思考: {'✅ 自动启用' if AUTO_REASONING_FOR_IMAGES else '❌ 关闭':<38s}║
     ║  支持题型: 单选、多选、判断、填空                        ║
     ╚═══════════════════════════════════════════════════════════╝
     """)
