@@ -1332,6 +1332,9 @@ def answer_question():
         
         # OCS脚本期望的格式：[题目, 答案, extra_data]
         # ai=true 会让OCS自动添加"AI"标签
+        # 计算总token数
+        total_tokens = prompt_tokens + completion_tokens
+        
         ocs_format = [
             question,
             processed_answer,
@@ -1342,7 +1345,13 @@ def answer_question():
                 "provider": model_client.provider,
                 "reasoning_used": force_reasoning or model_client.enable_reasoning,
                 "ai_time": round(ai_time, 2),
-                "total_time": round(total_time, 2)
+                "total_time": round(total_time, 2),
+                # Token使用量（从API响应中提取）
+                "usage": {
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": total_tokens
+                }
             }
         ]
         
@@ -1363,6 +1372,12 @@ def answer_question():
             "reasoning_used": force_reasoning or model_client.enable_reasoning,
             "ai_time": round(ai_time, 2),
             "total_time": round(total_time, 2),
+            # Token使用量（从API响应中提取）
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens
+            },
             # OCS脚本直接使用的格式
             "ocs_format": ocs_format
         })
