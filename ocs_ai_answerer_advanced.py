@@ -17,6 +17,8 @@ import re
 import time
 import csv
 from datetime import datetime
+import base64
+from io import BytesIO
 
 # 加载环境变量
 load_dotenv()
@@ -241,6 +243,59 @@ class ModelClient:
         if not self.is_auto_mode:
             logger.info(f"✅ 已初始化 {self.provider} 客户端，模型: {self.model}, 超时: {TIMEOUT}秒, 最大重试: {MAX_RETRIES}次")
     
+    def download_image_as_base64(self, image_url: str) -> Optional[str]:
+        """
+        下载图片并转换为base64格式（使用伪装请求头）
+        
+        Args:
+            image_url: 图片URL
+            
+        Returns:
+            base64编码的data URI，格式: data:image/xxx;base64,xxxxx
+            如果下载失败返回None
+        """
+        try:
+            import httpx
+            
+            # 伪装成浏览器的请求头
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://mooc1.chaoxing.com/',
+                'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                'Connection': 'keep-alive',
+                'Sec-Fetch-Dest': 'image',
+                'Sec-Fetch-Mode': 'no-cors',
+                'Sec-Fetch-Site': 'cross-site',
+            }
+            
+            # 创建HTTP客户端（带超时）
+            with httpx.Client(timeout=10.0, follow_redirects=True) as client:
+                logger.info(f"📥 下载图片: {image_url}")
+                response = client.get(image_url, headers=headers)
+                response.raise_for_status()
+                
+                # 获取图片内容
+                image_data = response.content
+                
+                # 根据Content-Type判断图片类型
+                content_type = response.headers.get('Content-Type', 'image/jpeg')
+                if 'image/' not in content_type:
+                    content_type = 'image/jpeg'  # 默认JPEG
+                
+                # 转换为base64
+                base64_data = base64.b64encode(image_data).decode('utf-8')
+                data_uri = f"data:{content_type};base64,{base64_data}"
+                
+                logger.info(f"✅ 图片下载成功，大小: {len(image_data)} bytes")
+                return data_uri
+                
+        except Exception as e:
+            logger.error(f"❌ 图片下载失败: {image_url}")
+            logger.error(f"   错误: {str(e)}")
+            return None
+    
     def chat(self, prompt: str, force_reasoning: bool = False, image_urls: List[str] = None) -> Tuple[Optional[str], Optional[str], Optional[Dict[str, int]]]:
         """
         调用模型进行对话（带重试机制，支持智能模型选择）
@@ -261,7 +316,7 @@ class ModelClient:
         if self.is_auto_mode:
             selected_provider, selected_client, selected_model = self._select_model(image_urls)
             if not selected_client:
-                return None, None
+                return None, None, None
         else:
             selected_provider = self.provider
             selected_client = self.client
@@ -295,18 +350,36 @@ class ModelClient:
                 max_tokens_limit = MAX_TOKENS
         
         # 构建消息（支持动态切换：首次尝试使用图片，失败后降级为纯文本）
-        use_images = self.provider == 'doubao' and image_urls
+        # 注意：在智能模式下，selected_provider 已经确定，所以用它判断而不是 self.provider
+        use_images = selected_provider == 'doubao' and image_urls
+        
+        # 如果需要使用图片，先下载并转换为base64
+        base64_images = []
+        if use_images and image_urls:
+            logger.info(f"🔄 开始下载 {len(image_urls)} 张图片...")
+            for img_url in image_urls:
+                base64_data = self.download_image_as_base64(img_url)
+                if base64_data:
+                    base64_images.append(base64_data)
+                else:
+                    logger.warning(f"⚠️  跳过无法下载的图片: {img_url}")
+            
+            if not base64_images:
+                logger.warning("⚠️  所有图片下载失败，将使用纯文本模式")
+                use_images = False
+            else:
+                logger.info(f"✅ 成功下载 {len(base64_images)}/{len(image_urls)} 张图片")
         
         # 构建消息的函数
         def build_messages(use_image_urls: bool):
-            if use_image_urls and selected_provider == 'doubao' and image_urls:
-                # 豆包支持图片输入（多模态）
+            if use_image_urls and selected_provider == 'doubao' and base64_images:
+                # 豆包支持图片输入（多模态）- 使用base64格式
                 user_content = []
-                # 先添加图片
-                for img_url in image_urls:
+                # 先添加图片（使用base64格式）
+                for base64_data in base64_images:
                     user_content.append({
                         "type": "image_url",
-                        "image_url": {"url": img_url}
+                        "image_url": {"url": base64_data}  # 直接使用data URI
                     })
                 # 再添加文本
                 user_content.append({"type": "text", "text": prompt})
@@ -339,7 +412,7 @@ class ModelClient:
             request_params["reasoning_effort"] = self.reasoning_effort
         
         reasoning_status = "（思考模式）" if use_reasoning else ""
-        image_status = f"，{len(image_urls)}张图片" if use_images else ""
+        image_status = f"，{len(base64_images)}张图片(base64)" if use_images and base64_images else ""
         auto_status = "🤖智能选择-" if self.is_auto_mode else ""
         logger.info(f"调用{auto_status}{selected_provider}模型 - {actual_model}{reasoning_status}{image_status}")
         
@@ -389,16 +462,6 @@ class ModelClient:
                 # 记录详细错误信息
                 logger.error(f"API调用失败 (尝试 {attempt}/{MAX_RETRIES}): {error_type}: {error_msg[:300]}")
                 
-                # 检查是否是图片URL相关的错误
-                # 豆包API在访问图片URL时可能出现连接错误
-                is_image_error = (
-                    "connection" in error_msg.lower() or
-                    "Connection" in error_type or
-                    "timeout" in error_msg.lower() or
-                    "unreachable" in error_msg.lower() or
-                    "failed" in error_msg.lower()
-                ) and image_urls  # 只有在有图片URL时才考虑是图片问题
-                
                 # 检查是否是参数错误（400），这种错误重试也没用
                 is_param_error = (
                     "400" in error_msg or 
@@ -412,18 +475,27 @@ class ModelClient:
                     print(f"\n❌ API参数错误: {error_msg[:200]}")
                     if "max_tokens" in error_msg.lower():
                         print("💡 提示: max_tokens必须在[1, 8192]范围内，已自动限制")
-                    return None, None
+                    return None, None, None
                 
-                # 如果是图片URL导致的连接错误，且是第一次尝试，标记为不使用图片重试
-                if is_image_error and attempt == 1 and selected_provider == 'doubao' and image_urls and not retry_without_images:
-                    logger.warning(f"⚠️  检测到可能的图片URL访问问题")
+                # 检查是否是图片相关的错误（即使使用了base64，也可能因为图片过大或格式问题失败）
+                # 如果使用了图片且出现连接/超时错误，且是第一次尝试，尝试不使用图片重试
+                is_image_error = (
+                    "connection" in error_msg.lower() or
+                    "Connection" in error_type or
+                    "timeout" in error_msg.lower() or
+                    "image" in error_msg.lower() or
+                    "base64" in error_msg.lower()
+                ) and base64_images  # 只有在实际使用了图片时才考虑是图片问题
+                
+                # 如果是图片相关错误，且是第一次尝试，标记为不使用图片重试
+                if is_image_error and attempt == 1 and selected_provider == 'doubao' and base64_images and not retry_without_images:
+                    logger.warning(f"⚠️  检测到可能的图片处理问题")
                     logger.warning(f"   错误类型: {error_type}")
-                    logger.warning(f"   图片URL: {image_urls}")
-                    logger.warning(f"   可能原因: 1) URL需要认证才能访问 2) URL无法从豆包服务器访问 3) 网络连接问题")
-                    print(f"\n⚠️  检测到图片URL访问问题（可能是URL无法访问、需要认证或网络问题）")
+                    logger.warning(f"   已发送 {len(base64_images)} 张base64图片")
+                    logger.warning(f"   可能原因: 1) 图片过大 2) 图片格式不支持 3) 网络连接问题")
+                    print(f"\n⚠️  检测到图片处理问题，将尝试不使用图片重试...")
                     print(f"   错误类型: {error_type}")
-                    print(f"   图片URL: {', '.join(image_urls[:2])}{'...' if len(image_urls) > 2 else ''}")
-                    print(f"   将尝试不使用图片重试...")
+                    print(f"   图片数量: {len(base64_images)} 张")
                     
                     # 标记为不使用图片重试
                     retry_without_images = True
@@ -440,7 +512,7 @@ class ModelClient:
                         print("💡 提示: 检查网络连接或配置HTTP_PROXY/HTTPS_PROXY环境变量")
                         if image_urls:
                             print("💡 提示: 图片URL可能无法访问，已尝试不使用图片")
-                    return None, None
+                    return None, None, None
                 
                 # 等待后重试（仅对网络错误）
                 wait_time = min(2 ** attempt, 10)  # 指数退避，最多10秒
@@ -1033,12 +1105,33 @@ def answer_question():
         
         # 提取题目中的图片URL
         image_urls = []
+        
+        # 清理URL的函数（去除扩展名后可能附加的字符）
+        def clean_url(url):
+            """清理URL，去除扩展名后可能附加的字符"""
+            url = str(url).strip()
+            # 找到最后一个图片扩展名的位置
+            match = re.search(r'\.(jpg|jpeg|png|gif|bmp|webp)', url, re.IGNORECASE)
+            if match:
+                # 只保留到扩展名结束（包括扩展名）
+                end_pos = match.end()
+                return url[:end_pos]
+            return url
+        
         if images and isinstance(images, list):
-            image_urls = [str(img).strip() for img in images if img]
+            image_urls = [clean_url(img) for img in images if img]
         
         # 从题目文本中提取图片URL（支持常见图片格式）
-        img_pattern = r'(https?://[^\s]+\.(?:jpg|jpeg|png|gif|bmp|webp))'
+        # 使用非贪婪匹配，确保在遇到图片扩展名后立即停止
+        # 匹配URL中的合法字符，但使用非贪婪模式避免匹配过多
+        img_pattern = r'(https?://[a-zA-Z0-9\-._~:/?#\[\]@!$&\'()*+,;=%]+?\.(?:jpg|jpeg|png|gif|bmp|webp))'
         found_images = re.findall(img_pattern, question, re.IGNORECASE)
+        
+        # 清理提取的URL
+        found_images = [clean_url(url) for url in found_images]
+        
+        if found_images:
+            logger.info(f"📷 从题目中检测到 {len(found_images)} 张图片")
         image_urls.extend(found_images)
         
         # 从选项中提取图片URL
@@ -1046,6 +1139,7 @@ def answer_question():
         if options:
             options_text = ' '.join(str(opt) for opt in options)
             found_images_in_options = re.findall(img_pattern, options_text, re.IGNORECASE)
+            found_images_in_options = [clean_url(url) for url in found_images_in_options]
             if found_images_in_options:
                 logger.info(f"📷 从选项中检测到 {len(found_images_in_options)} 张图片")
                 image_urls.extend(found_images_in_options)
