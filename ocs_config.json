@@ -20,6 +20,6 @@
       "handler": "return (env)=> { const imgPattern = /https?:\\/\\/[^\\s]+\\.(?:jpg|jpeg|png|gif|bmp|webp)/gi; return env.title?.match(imgPattern) || []; }"
     }
   },
-  "handler": "return (res)=>res.success && res.ocs_format ? [res.ocs_format] : []"
+  "handler": "return (res)=>res.success && res.ocs_format ? res.ocs_format : []"
 }
 
