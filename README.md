@@ -510,7 +510,7 @@ CSV_LOG_FILE=ocs_answers_log.csv  # CSV日志文件路径
       "handler": "return (env)=> { const imgPattern = /https?:\\/\\/[^\\s]+\\.(?:jpg|jpeg|png|gif|bmp|webp)/gi; return env.title?.match(imgPattern) || []; }"
     }
   },
-  "handler": "return (res)=>res.success && res.ocs_format ? [res.ocs_format] : []"
+  "handler": "return (res)=>res.success && res.ocs_format ? res.ocs_format : []"
 }
 ```
 
