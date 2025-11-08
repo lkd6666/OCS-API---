@@ -448,8 +448,9 @@ class ModelClient:
                         'completion_tokens': response.usage.completion_tokens if hasattr(response.usage, 'completion_tokens') else 0,
                         'total_tokens': response.usage.total_tokens if hasattr(response.usage, 'total_tokens') else 0
                     }
-                    logger.debug(f"Token使用量: 输入={usage_info['prompt_tokens']}, 输出={usage_info['completion_tokens']}, 总计={usage_info['total_tokens']}")
+                    logger.info(f"💰 Token使用量: 输入={usage_info['prompt_tokens']}, 输出={usage_info['completion_tokens']}, 总计={usage_info['total_tokens']}")
                 else:
+                    logger.warning("⚠️  响应中没有usage信息，token用量将记录为0")
                     usage_info = {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
                 
                 return reasoning_content, answer, usage_info
@@ -967,6 +968,77 @@ def format_time(seconds: float) -> str:
         return f"{minutes}分{secs:.1f}秒"
 
 
+def check_and_fix_csv_header(csv_file: str, correct_headers: List[str]) -> bool:
+    """
+    检查并修复CSV文件表头
+    
+    Args:
+        csv_file: CSV文件路径
+        correct_headers: 正确的表头列表
+    
+    Returns:
+        True表示表头正确或已修复，False表示修复失败
+    """
+    if not os.path.exists(csv_file):
+        # 文件不存在，无需修复
+        return True
+    
+    try:
+        # 读取当前表头
+        with open(csv_file, 'r', encoding='utf-8-sig') as f:
+            reader = csv.reader(f)
+            current_headers = next(reader, None)
+            if current_headers is None:
+                # 空文件，无需修复
+                return True
+            
+            # 检查表头是否正确
+            if current_headers == correct_headers:
+                # 表头正确，无需修复
+                return True
+            
+            # 表头不正确，需要修复
+            logger.warning(f"⚠️  CSV文件表头不正确，当前列数: {len(current_headers)}, 正确列数: {len(correct_headers)}")
+            logger.info("🔧 开始自动修复CSV文件表头...")
+            
+            # 读取所有数据
+            f.seek(0)
+            reader = csv.reader(f)
+            rows = list(reader)
+        
+        # 备份原文件
+        backup_file = csv_file + '.backup'
+        import shutil
+        shutil.copy2(csv_file, backup_file)
+        logger.info(f"📋 已备份到: {backup_file}")
+        
+        # 修复数据
+        fixed_rows = [correct_headers]  # 新表头
+        
+        for i, row in enumerate(rows[1:], start=2):  # 跳过旧表头
+            # 如果行的列数少于新表头，补充默认值
+            if len(row) < len(correct_headers):
+                missing_cols = len(correct_headers) - len(row)
+                # 补充默认值：0, 0, 0, 0.000000, ''
+                row.extend(['0'] * (missing_cols - 1) + [''])
+            elif len(row) > len(correct_headers):
+                # 如果列数过多，截断
+                row = row[:len(correct_headers)]
+            fixed_rows.append(row)
+        
+        # 写入修复后的文件
+        with open(csv_file, 'w', newline='', encoding='utf-8-sig') as f:
+            writer = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
+            writer.writerows(fixed_rows)
+        
+        logger.info(f"✅ CSV文件表头修复完成，共处理 {len(fixed_rows)-1} 行数据")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ CSV文件表头修复失败: {str(e)}")
+        return False
+
+
 def save_to_csv(question: str, options: List[str], q_type: str, raw_answer: str, 
                 reasoning: Optional[str], processed_answer: str, ai_time: float, 
                 total_time: float, model_name: str, reasoning_used: bool,
@@ -997,6 +1069,10 @@ def save_to_csv(question: str, options: List[str], q_type: str, raw_answer: str,
         '处理后答案', 'AI耗时(秒)', '总耗时(秒)', '模型', '思考模式',
         '输入Token', '输出Token', '总Token', '费用(元)', '提供商'
     ]
+    
+    # 检查并修复CSV文件表头（如果需要）
+    if os.path.exists(csv_file):
+        check_and_fix_csv_header(csv_file, headers)
     
     # 检查文件是否存在，如果不存在则创建并写入表头
     file_exists = os.path.exists(csv_file)
