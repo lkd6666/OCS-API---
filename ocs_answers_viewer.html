@@ -152,10 +152,12 @@
         }
 
         .table-container {
-            overflow-x: auto;
             margin-top: 20px;
             border-radius: 4px;
             border: 1px solid #EBEEF5;
+            max-height: 600px;
+            overflow: auto;
+            position: relative;
         }
 
         table {
@@ -167,6 +169,9 @@
         thead {
             background: #409EFF;
             color: white;
+            position: sticky;
+            top: 0;
+            z-index: 10;
         }
 
         th, td {
@@ -177,6 +182,7 @@
 
         th {
             font-weight: 600;
+            background: #409EFF;
             position: sticky;
             top: 0;
             z-index: 10;
@@ -401,6 +407,56 @@
             color: #999;
             font-style: italic;
         }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-top: 20px;
+            padding: 20px;
+        }
+
+        .pagination button {
+            padding: 8px 12px;
+            border: 1px solid #DCDFE6;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            color: #606266;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .pagination button:hover:not(:disabled) {
+            background: #409EFF;
+            color: white;
+            border-color: #409EFF;
+        }
+
+        .pagination button:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        .pagination button.active {
+            background: #409EFF;
+            color: white;
+            border-color: #409EFF;
+        }
+
+        .pagination span {
+            color: #606266;
+            font-size: 14px;
+        }
+
+        .pagination select {
+            padding: 6px 10px;
+            border: 1px solid #DCDFE6;
+            border-radius: 4px;
+            font-size: 14px;
+            color: #606266;
+        }
     </style>
 </head>
 <body>
@@ -498,6 +554,20 @@
                     <tbody id="tableBody"></tbody>
                 </table>
             </div>
+
+            <div class="pagination" id="pagination">
+                <button id="firstPage">首页</button>
+                <button id="prevPage">上一页</button>
+                <span id="pageInfo">第 1 页，共 1 页</span>
+                <button id="nextPage">下一页</button>
+                <button id="lastPage">末页</button>
+                <select id="pageSizeSelect">
+                    <option value="10">10条/页</option>
+                    <option value="20" selected>20条/页</option>
+                    <option value="50">50条/页</option>
+                    <option value="100">100条/页</option>
+                </select>
+            </div>
         </div>
     </div>
 
@@ -518,6 +588,11 @@
         let csvData = [];
         let filteredData = [];
         let charts = {};
+        
+        // 分页相关变量
+        let currentPage = 1;
+        let pageSize = 20;
+        let totalPages = 1;
 
         // 文件选择
         document.getElementById('csvFile').addEventListener('change', function(e) {
@@ -541,6 +616,17 @@
             filterData();
         });
         document.getElementById('customDate').addEventListener('change', filterData);
+
+        // 分页控制
+        document.getElementById('firstPage').addEventListener('click', () => goToPage(1));
+        document.getElementById('prevPage').addEventListener('click', () => goToPage(currentPage - 1));
+        document.getElementById('nextPage').addEventListener('click', () => goToPage(currentPage + 1));
+        document.getElementById('lastPage').addEventListener('click', () => goToPage(totalPages));
+        document.getElementById('pageSizeSelect').addEventListener('change', function() {
+            pageSize = parseInt(this.value);
+            currentPage = 1;
+            updateTable();
+        });
 
         // 读取CSV文件
         function readCSV(file) {
@@ -648,7 +734,15 @@
                 return;
             }
 
+            // 按时间戳降序排列（最新的在前面）
+            csvData.sort((a, b) => {
+                const dateA = new Date(a['时间戳'] || '');
+                const dateB = new Date(b['时间戳'] || '');
+                return dateB - dateA;  // 降序
+            });
+
             filteredData = csvData;
+            currentPage = 1;  // 重置到第一页
             displayData();
         }
 
@@ -732,6 +826,14 @@
                 return matchSearch && matchType && matchReasoning && matchDate;
             });
 
+            // 按时间戳降序排列（最新的在前面）
+            filteredData.sort((a, b) => {
+                const dateA = new Date(a['时间戳'] || '');
+                const dateB = new Date(b['时间戳'] || '');
+                return dateB - dateA;  // 降序
+            });
+
+            currentPage = 1;  // 重置到第一页
             displayData();
         }
 
@@ -947,7 +1049,19 @@
             const tbody = document.getElementById('tableBody');
             tbody.innerHTML = '';
 
-            filteredData.forEach((row, index) => {
+            // 计算分页
+            totalPages = Math.ceil(filteredData.length / pageSize);
+            if (totalPages === 0) totalPages = 1;
+            if (currentPage > totalPages) currentPage = totalPages;
+            if (currentPage < 1) currentPage = 1;
+
+            // 获取当前页的数据
+            const startIndex = (currentPage - 1) * pageSize;
+            const endIndex = Math.min(startIndex + pageSize, filteredData.length);
+            const pageData = filteredData.slice(startIndex, endIndex);
+
+            pageData.forEach((row, index) => {
+                const actualIndex = startIndex + index;  // 在filteredData中的实际索引
                 const tr = document.createElement('tr');
                 const typeClass = {
                     '单选题': 'badge-single',
@@ -969,7 +1083,7 @@
                 // 创建题目单元格（可点击）
                 const questionCell = document.createElement('td');
                 questionCell.className = 'question-cell';
-                questionCell.setAttribute('data-index', index);
+                questionCell.setAttribute('data-index', actualIndex);  // 使用实际索引
                 questionCell.textContent = questionDisplay;
                 if (questionText.length > 50) {
                     questionCell.setAttribute('data-tooltip', questionText);
@@ -1047,6 +1161,34 @@
                 
                 tbody.appendChild(tr);
             });
+
+            // 更新分页控件
+            updatePagination();
+        }
+
+        // 更新分页控件
+        function updatePagination() {
+            const pageInfo = document.getElementById('pageInfo');
+            const firstPageBtn = document.getElementById('firstPage');
+            const prevPageBtn = document.getElementById('prevPage');
+            const nextPageBtn = document.getElementById('nextPage');
+            const lastPageBtn = document.getElementById('lastPage');
+
+            pageInfo.textContent = `第 ${currentPage} 页，共 ${totalPages} 页（共 ${filteredData.length} 条记录）`;
+
+            firstPageBtn.disabled = currentPage === 1;
+            prevPageBtn.disabled = currentPage === 1;
+            nextPageBtn.disabled = currentPage === totalPages;
+            lastPageBtn.disabled = currentPage === totalPages;
+        }
+
+        // 跳转到指定页
+        function goToPage(page) {
+            if (page < 1 || page > totalPages || page === currentPage) {
+                return;
+            }
+            currentPage = page;
+            updateTable();
         }
 
         // 显示题目详情模态框（使用索引）
