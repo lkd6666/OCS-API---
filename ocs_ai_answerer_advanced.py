@@ -377,16 +377,62 @@ class ModelClient:
         # 构建消息的函数
         def build_messages(use_image_urls: bool):
             if use_image_urls and selected_provider == 'doubao' and base64_images:
-                # 豆包支持图片输入（多模态）- 使用base64格式
+                # 豆包支持图文混排（多模态）- 支持文本和图片交替排列
                 user_content = []
-                # 先添加图片（使用base64格式）
-                for base64_data in base64_images:
-                    user_content.append({
-                        "type": "image_url",
-                        "image_url": {"url": base64_data}  # 直接使用data URI
-                    })
-                # 再添加文本
-                user_content.append({"type": "text", "text": prompt})
+                
+                # 图文混排策略:
+                # 1. 如果题目/选项中有图片URL,将它们按出现顺序插入到对应位置
+                # 2. 否则,先添加所有图片,再添加文本
+                
+                # 创建图片URL到base64的映射
+                url_to_base64 = {}
+                if image_urls and len(image_urls) == len(base64_images):
+                    url_to_base64 = dict(zip(image_urls, base64_images))
+                
+                # 检查prompt中是否包含图片URL(需要混排)
+                has_embedded_images = any(url in prompt for url in image_urls) if image_urls else False
+                
+                if has_embedded_images and url_to_base64:
+                    # 图文混排模式:将prompt分割,在图片URL位置插入图片
+                    logger.info("📝 使用图文混排模式")
+                    
+                    # 构建正则表达式匹配所有图片URL
+                    import re
+                    # 转义URL中的特殊字符并构建pattern
+                    url_patterns = [re.escape(url) for url in image_urls]
+                    pattern = '|'.join(url_patterns)
+                    
+                    # 分割文本,保留分隔符(图片URL)
+                    parts = re.split(f'({pattern})', prompt)
+                    
+                    for part in parts:
+                        part = part.strip()
+                        if not part:
+                            continue
+                        
+                        if part in url_to_base64:
+                            # 这是图片URL,插入图片
+                            user_content.append({
+                                "type": "image_url",
+                                "image_url": {"url": url_to_base64[part]}
+                            })
+                        else:
+                            # 这是文本,插入文本
+                            if part:  # 确保不是空字符串
+                                user_content.append({
+                                    "type": "text",
+                                    "text": part
+                                })
+                else:
+                    # 传统模式:先添加所有图片,再添加文本
+                    logger.info("📝 使用传统模式(先图片后文本)")
+                    for base64_data in base64_images:
+                        user_content.append({
+                            "type": "image_url",
+                            "image_url": {"url": base64_data}
+                        })
+                    # 再添加文本
+                    user_content.append({"type": "text", "text": prompt})
                 
                 return [
                     {"role": "system", "content": "你是一个专业、严谨的答题助手。你必须根据题目、图片和选项给出准确的答案，严格按照要求的格式输出，不要有任何多余的内容。"},
