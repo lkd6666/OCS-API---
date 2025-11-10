@@ -19,6 +19,7 @@ import csv
 from datetime import datetime
 import base64
 from io import BytesIO
+import threading
 
 # 加载环境变量
 load_dotenv()
@@ -88,6 +89,9 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app)
+
+# CSV文件写入锁（支持并发）
+csv_write_lock = threading.Lock()
 
 # 题型映射
 QUESTION_TYPES = {
@@ -1044,7 +1048,7 @@ def save_to_csv(question: str, options: List[str], q_type: str, raw_answer: str,
                 total_time: float, model_name: str, reasoning_used: bool,
                 prompt_tokens: int = 0, completion_tokens: int = 0, provider: str = ''):
     """
-    保存答题记录到CSV文件
+    保存答题记录到CSV文件（线程安全）
     
     Args:
         question: 题目
@@ -1070,76 +1074,78 @@ def save_to_csv(question: str, options: List[str], q_type: str, raw_answer: str,
         '输入Token', '输出Token', '总Token', '费用(元)', '提供商'
     ]
     
-    # 检查并修复CSV文件表头（如果需要）
-    if os.path.exists(csv_file):
-        check_and_fix_csv_header(csv_file, headers)
-    
-    # 检查文件是否存在，如果不存在则创建并写入表头
-    file_exists = os.path.exists(csv_file)
-    
-    try:
-        # 使用UTF-8 BOM编码，确保Excel可以正确显示中文
-        with open(csv_file, 'a', newline='', encoding='utf-8-sig') as f:
-            writer = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
-            
-            # 如果文件不存在，写入表头
-            if not file_exists:
-                writer.writerow(headers)
-            
-            # 准备数据
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            options_str = ' | '.join(options) if options else ''
-            reasoning_str = reasoning if reasoning else ''
-            
-            # 计算费用（基于DeepSeek和豆包的官方价格）
-            # DeepSeek: 输入缓存命中0.2元/百万tokens，缓存未命中2元/百万tokens，输出3元/百万tokens
-            # 豆包-Seed-1.6: 推理输入0.8元/百万tokens，推理输出2元/百万tokens
-            # 注意：这里假设缓存未命中（实际应该根据缓存状态判断）
-            cost = 0.0
-            if provider.lower() == 'deepseek':
-                # DeepSeek价格（假设缓存未命中）
-                input_cost = (prompt_tokens / 1000000) * 2.0  # 2元/百万tokens
-                output_cost = (completion_tokens / 1000000) * 3.0  # 3元/百万tokens
-                cost = input_cost + output_cost
-            elif provider.lower() == 'doubao':
-                # 豆包-Seed-1.6 官方价格
-                input_cost = (prompt_tokens / 1000000) * 0.8  # 0.8元/百万tokens
-                output_cost = (completion_tokens / 1000000) * 2.0  # 2元/百万tokens
-                cost = input_cost + output_cost
-            else:
-                # 未知提供商，使用默认价格（参考DeepSeek）
-                input_cost = (prompt_tokens / 1000000) * 2.0
-                output_cost = (completion_tokens / 1000000) * 3.0
-                cost = input_cost + output_cost
-            
-            total_tokens = prompt_tokens + completion_tokens
-            
-            # 写入数据行（所有字段都会被正确转义）
-            row = [
-                timestamp,
-                q_type,
-                question,
-                options_str,
-                raw_answer,
-                reasoning_str,
-                processed_answer,
-                f"{ai_time:.2f}",
-                f"{total_time:.2f}",
-                model_name,
-                '是' if reasoning_used else '否',
-                str(prompt_tokens),
-                str(completion_tokens),
-                str(total_tokens),
-                f"{cost:.6f}",
-                provider.upper() if provider else ''
-            ]
-            
-            writer.writerow(row)
-            logger.debug(f"CSV记录已保存: {len(row)}个字段，思考过程长度: {len(reasoning_str)}")
-            
-    except Exception as e:
-        # CSV记录失败不影响答题流程，只记录日志
-        logger.warning(f"保存CSV记录失败: {str(e)}", exc_info=True)
+    # 使用线程锁保护CSV文件操作（支持并发）
+    with csv_write_lock:
+        # 检查并修复CSV文件表头（如果需要）
+        if os.path.exists(csv_file):
+            check_and_fix_csv_header(csv_file, headers)
+        
+        # 检查文件是否存在，如果不存在则创建并写入表头
+        file_exists = os.path.exists(csv_file)
+        
+        try:
+            # 使用UTF-8 BOM编码，确保Excel可以正确显示中文
+            with open(csv_file, 'a', newline='', encoding='utf-8-sig') as f:
+                writer = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
+                
+                # 如果文件不存在，写入表头
+                if not file_exists:
+                    writer.writerow(headers)
+                
+                # 准备数据
+                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                options_str = ' | '.join(options) if options else ''
+                reasoning_str = reasoning if reasoning else ''
+                
+                # 计算费用（基于DeepSeek和豆包的官方价格）
+                # DeepSeek: 输入缓存命中0.2元/百万tokens，缓存未命中2元/百万tokens，输出3元/百万tokens
+                # 豆包-Seed-1.6: 推理输入0.8元/百万tokens，推理输出2元/百万tokens
+                # 注意：这里假设缓存未命中（实际应该根据缓存状态判断）
+                cost = 0.0
+                if provider.lower() == 'deepseek':
+                    # DeepSeek价格（假设缓存未命中）
+                    input_cost = (prompt_tokens / 1000000) * 2.0  # 2元/百万tokens
+                    output_cost = (completion_tokens / 1000000) * 3.0  # 3元/百万tokens
+                    cost = input_cost + output_cost
+                elif provider.lower() == 'doubao':
+                    # 豆包-Seed-1.6 官方价格
+                    input_cost = (prompt_tokens / 1000000) * 0.8  # 0.8元/百万tokens
+                    output_cost = (completion_tokens / 1000000) * 2.0  # 2元/百万tokens
+                    cost = input_cost + output_cost
+                else:
+                    # 未知提供商，使用默认价格（参考DeepSeek）
+                    input_cost = (prompt_tokens / 1000000) * 2.0
+                    output_cost = (completion_tokens / 1000000) * 3.0
+                    cost = input_cost + output_cost
+                
+                total_tokens = prompt_tokens + completion_tokens
+                
+                # 写入数据行（所有字段都会被正确转义）
+                row = [
+                    timestamp,
+                    q_type,
+                    question,
+                    options_str,
+                    raw_answer,
+                    reasoning_str,
+                    processed_answer,
+                    f"{ai_time:.2f}",
+                    f"{total_time:.2f}",
+                    model_name,
+                    '是' if reasoning_used else '否',
+                    str(prompt_tokens),
+                    str(completion_tokens),
+                    str(total_tokens),
+                    f"{cost:.6f}",
+                    provider.upper() if provider else ''
+                ]
+                
+                writer.writerow(row)
+                logger.debug(f"CSV记录已保存: {len(row)}个字段，思考过程长度: {len(reasoning_str)}")
+                
+        except Exception as e:
+            # CSV记录失败不影响答题流程，只记录日志
+            logger.warning(f"保存CSV记录失败: {str(e)}", exc_info=True)
 
 
 @app.route('/api/answer', methods=['POST'])
@@ -1702,6 +1708,9 @@ if __name__ == '__main__':
             print(f"   🔧 已配置模型: {', '.join(model_client.clients.keys())}\n")
         else:
             print("✅ 服务启动成功！\n")
+        
+        print("🚀 并发模式已启用，支持同时处理多个请求！\n")
     
-    app.run(host=HOST, port=PORT, debug=DEBUG)
+    # 启用多线程支持（支持并发请求）
+    app.run(host=HOST, port=PORT, debug=DEBUG, threaded=True)
 
