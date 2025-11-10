@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name       				OCS 网课助手
-// @version    				4.11.19
+// @version    				4.11.69
 // @description				OCS(online-course-script) 网课助手，官网 https://docs.ocsjs.com ，专注于帮助大学生从网课中释放出来 让自己的时间把握在自己的手中，拥有人性化的操作页面，流畅的步骤提示，支持  【超星学习通】 【知到智慧树】 【职教云】 【智慧职教】 【中国大学MOOC】 等网课的学习，作业。具体的功能请查看脚本悬浮窗中的教程页面。
 // @author     				enncy
 // @license    				MIT
@@ -24,6 +24,7 @@
 // @match      				*://*.cqie.cn/*
 // @match      				*://*.ccqmxx.com/*
 // @match      				*://*.jxgmxy.com/*
+// @match      				*://*.sslibrary.com/*
 // @match      				*://*.icve.com.cn/*
 // @match      				*://*.ai.icve.com.cn/*
 // @match      				*://*.course.icve.com.cn/*
@@ -307,6 +308,23 @@ var __publicField = (obj, key, value) => {
       const TopPosition = screen.height ? (screen.height - height) / 2 : 0;
       const settings = "height=" + height + ",width=" + width + ",top=" + TopPosition + ",left=" + LeftPosition + ",scrollbars=" + (scrollbars ? "yes" : "no") + ",resizable=" + (resizable ? "yes" : "no");
       return window.open(url, winName, settings);
+    },
+    transition: async (el, properties, duration_ms, val, options) => {
+      return new Promise((resolve) => {
+        const original_val = Reflect.get(el.style, properties) || "";
+        el.style.transition = `${String(properties)} ${duration_ms}s ${(options == null ? void 0 : options.timing_function) || "ease-in-out"}`;
+        Reflect.set(el.style, properties, val);
+        el.addEventListener("transitionend", function handler() {
+          el.removeEventListener("transitionend", handler);
+          setTimeout(() => {
+            Reflect.set(el.style, properties, original_val);
+            setTimeout(() => {
+              el.style.transition = "";
+            }, duration_ms * 1e3);
+          }, ((options == null ? void 0 : options.reset_ms) || 0) * 1e3);
+          resolve();
+        });
+      });
     }
   };
   const $string = {
@@ -447,11 +465,11 @@ var __publicField = (obj, key, value) => {
     return true;
   }
   function clearString(str, ...exclude) {
-    return str.trim().toLocaleLowerCase().replace(RegExp(`[^\\u4e00-\\u9fa5A-Za-z0-9${exclude.join("")}]*`, "g"), "");
+    return str.trim().toLocaleLowerCase().replace(RegExp(`[^\\u2E80-\\u9FFFA-Za-z0-9${exclude.join("")}]*`, "g"), "");
   }
   function answerSimilar(answers, options) {
-    const _answers = answers.map(removeRedundant);
-    const _options = options.map(removeRedundant);
+    const _answers = answers.map(removeRedundant).map((a) => clearString(a));
+    const _options = options.map(removeRedundant).map((o) => clearString(o));
     const similar = _answers.length !== 0 ? _options.map((option) => {
       if (option.trim() === "") {
         return { rating: 0, target: "" };
@@ -469,7 +487,7 @@ var __publicField = (obj, key, value) => {
     return result;
   }
   function removeRedundant(str) {
-    return (str == null ? void 0 : str.trim().replace(/[A-Z]{1}[^A-Za-z0-9\u4e00-\u9fa5]+([A-Za-z0-9\u4e00-\u9fa5]+)/, "$1")) || "";
+    return (str == null ? void 0 : str.trim().replace(/[A-Z]{1}[^A-Za-z0-9\u2E80-\u9FFF]+([A-Za-z0-9\u2E80-\u9FFF]+)/, "$1")) || "";
   }
   function request(url, opts) {
     return new Promise((resolve, reject) => {
@@ -525,199 +543,6 @@ var __publicField = (obj, key, value) => {
         reject(error);
       }
     });
-  }
-  const ListOfActions = [
-    "click",
-    "check",
-    "dblclick",
-    "bringToFront",
-    "dragAndDrop",
-    "fill",
-    "focus",
-    "hover",
-    "screenshot",
-    "selectOption",
-    "setInputFiles",
-    "tap",
-    "press",
-    "reload",
-    "waitForRequest",
-    "waitForResponse",
-    "waitForSelector"
-  ];
-  class RemotePlaywright {
-    static async getRemotePage(show_debug_cursor, logger) {
-      if (this.currentPage) {
-        return this.currentPage;
-      }
-      if (!this.authToken) {
-        try {
-          this.authToken = await request("http://localhost:15319/get-actions-key", {
-            type: "GM_xmlhttpRequest",
-            method: "get",
-            responseType: "text"
-          });
-          this.currentPage = this.createRemotePage(this.authToken, { show_debug_cursor, logger });
-          return this.currentPage;
-        } catch (e) {
-          console.log(e);
-          return void 0;
-        }
-      } else {
-        this.currentPage = this.createRemotePage(this.authToken, { show_debug_cursor, logger });
-        return this.currentPage;
-      }
-    }
-    static createRemotePage(authToken, configs) {
-      const page = /* @__PURE__ */ Object.create({});
-      configs = configs || {};
-      configs.logger = configs.logger || console.debug;
-      for (const property of ListOfActions) {
-        Reflect.set(page, property, async (...args) => {
-          var _a, _b;
-          let data;
-          if (property === "click") {
-            if (args[0] instanceof Element) {
-              const el = args[0];
-              const options = args[1] || {};
-              await scrollToElement(el);
-              await $.sleep(500);
-              if (configs == null ? void 0 : configs.show_debug_cursor) {
-                showMousePointer(el);
-              }
-              const rect = el.getBoundingClientRect();
-              data = {
-                page: window.location.href,
-                property: "mouse.click",
-                args: [
-                  rect.left + rect.width / 2,
-                  rect.top + rect.height / 2,
-                  {
-                    button: options.button,
-                    clickCount: options.clickCount,
-                    delay: options.delay
-                  }
-                ]
-              };
-            } else if (typeof args[0] === "string") {
-              const el = document.querySelector(args[0]);
-              if (el) {
-                await scrollToElement(el);
-                if (configs == null ? void 0 : configs.show_debug_cursor) {
-                  showMousePointer(el);
-                }
-              }
-            }
-          }
-          if (!data) {
-            data = { page: window.location.href, property, args };
-          }
-          (_a = configs == null ? void 0 : configs.logger) == null ? void 0 : _a.call(configs, "[RP]: ", JSON.stringify(data));
-          try {
-            const res = await request("/ocs-script-actions", {
-              type: "fetch",
-              method: "post",
-              responseType: ["waitForRequest", "waitForResponse", "reload"].includes(property) ? "json" : "text",
-              headers: {
-                "auth-token": authToken
-              },
-              data
-            });
-            return res;
-          } catch (e) {
-            (_b = configs == null ? void 0 : configs.logger) == null ? void 0 : _b.call(configs, "[RP-ERROR]: ", JSON.stringify(data));
-            return void 0;
-          }
-        });
-      }
-      console.log(page);
-      return page;
-    }
-  }
-  RemotePlaywright.authToken = "";
-  RemotePlaywright.currentPage = void 0;
-  function scrollToElement(el) {
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    return $.sleep(200);
-  }
-  function showMousePointer(el) {
-    setTimeout(() => {
-      const rect = el.getBoundingClientRect();
-      const div = document.createElement("div");
-      div.textContent = "";
-      div.style.position = "fixed";
-      div.style.zIndex = "99999";
-      div.style.width = "20px";
-      div.style.height = "20px";
-      div.style.border = "2px solid red";
-      div.style.borderRadius = "50%";
-      div.style.left = rect.left + rect.width / 2 - 11 + "px";
-      div.style.top = rect.top + rect.height / 2 - 11 + "px";
-      document.body.append(div);
-      setTimeout(() => {
-        div.remove();
-      }, 500);
-    }, 100);
-  }
-  function defaultWorkTypeResolver(ctx) {
-    function count(selector) {
-      let c = 0;
-      for (const option of ctx.elements.options || []) {
-        if ((option == null ? void 0 : option.querySelector(selector)) !== null) {
-          c++;
-        }
-      }
-      return c;
-    }
-    return count('[type="radio"]') === 2 ? "judgement" : count('[type="radio"]') > 2 ? "single" : count('[type="checkbox"]') > 2 ? "multiple" : count("textarea") >= 1 ? "completion" : void 0;
-  }
-  function isPlainAnswer(answer) {
-    answer = answer.trim();
-    if (answer.length > 8 || !/[A-Z]/.test(answer)) {
-      return false;
-    }
-    const counter = {};
-    let min = 0;
-    for (let i = 0; i < answer.length; i++) {
-      if (answer.charCodeAt(i) < min) {
-        return false;
-      }
-      min = answer.charCodeAt(i);
-      counter[min] = (counter[min] || 0) + 1;
-    }
-    for (const key in counter) {
-      if (counter[key] !== 1) {
-        return false;
-      }
-    }
-    return true;
-  }
-  function resolvePlainAnswer(answer) {
-    const resolve = answer.trim().replace(/[,，、 ]/g, "").trim();
-    if (isPlainAnswer(resolve)) {
-      return resolve;
-    }
-  }
-  function splitAnswer(answer, separators = ["===", "#", "---", "###", "|", ";", "\uFF1B"]) {
-    answer = answer.trim();
-    if (answer.length === 0) {
-      return [];
-    }
-    separators = separators.length === 0 ? ["===", "#", "---", "###", "|", ";", "\uFF1B"] : separators;
-    separators = separators.filter((el) => el.trim().length > 0);
-    try {
-      const json = JSON.parse(answer);
-      if (Array.isArray(json)) {
-        return json.map(String).filter((el) => el.trim().length > 0);
-      }
-    } catch {
-      for (const sep of separators) {
-        if (answer.split(sep).length > 1) {
-          return answer.split(sep).filter((el) => el.trim().length > 0);
-        }
-      }
-    }
-    return [answer];
   }
   var lib = {};
   var start$1 = {};
@@ -1265,7 +1090,7 @@ var __publicField = (obj, key, value) => {
     }
     addChangeListener(key, listener) {
       return GM_addValueChangeListener(key, (_, pre, curr, remote) => {
-        listener(pre, curr, remote);
+        listener(curr, pre, remote);
       });
     }
     removeChangeListener(listenerId) {
@@ -1726,13 +1551,13 @@ var __publicField = (obj, key, value) => {
       return (0, dom_1$7.h)(tag, lines.map((line) => (0, dom_1$7.h)("li", Array.isArray(line) ? line.map((node) => typeof node === "string" ? (0, dom_1$7.h)("div", { innerHTML: node }) : node) : [typeof line === "string" ? (0, dom_1$7.h)("div", { innerHTML: line }) : line])));
     },
     copy(name, value) {
-      return (0, dom_1$7.h)("span", "\u{1F4C4}" + name, (btn) => {
+      return (0, dom_1$7.h)("span", "📄" + name, (btn) => {
         btn.className = "copy";
         btn.addEventListener("click", () => {
-          btn.innerText = "\u5DF2\u590D\u5236\u221A";
+          btn.innerText = "已复制√";
           navigator.clipboard.writeText(value);
           setTimeout(() => {
-            btn.innerText = "\u{1F4C4}" + name;
+            btn.innerText = "📄" + name;
           }, 500);
         });
       });
@@ -1879,7 +1704,7 @@ var __publicField = (obj, key, value) => {
           store_12.$store.set(this.keyOfState(id), 0);
           store_12.$store.set(this.keyOfArguments(id), args);
           setTimeout(() => {
-            const listenerId = store_12.$store.addChangeListener(this.keyOfState(id), (pre, curr) => {
+            const listenerId = store_12.$store.addChangeListener(this.keyOfState(id), () => {
               store_12.$store.removeChangeListener(listenerId);
               callback === null || callback === void 0 ? void 0 : callback(store_12.$store.get(this.keyOfReturn(id)));
               store_12.$store.delete(this.keyOfState(id));
@@ -1898,7 +1723,7 @@ var __publicField = (obj, key, value) => {
             if (originId) {
               resolve(originId);
             } else {
-              const id = store_12.$store.addChangeListener(key, (pre, curr, remote) => __awaiter2(this, void 0, void 0, function* () {
+              const id = store_12.$store.addChangeListener(key, (curr, pre, remote) => __awaiter2(this, void 0, void 0, function* () {
                 if (remote) {
                   if (curr === void 0) {
                     return;
@@ -2044,7 +1869,7 @@ var __publicField = (obj, key, value) => {
     }
     onConfigChange(key, handler) {
       const _key = common_1$3.$.namespaceKey(this.namespace, key.toString());
-      return store_1$1.$store.addChangeListener(_key, (pre, curr, remote) => {
+      return store_1$1.$store.addChangeListener(_key, (curr, pre, remote) => {
         handler(curr, pre, !!remote);
       });
     }
@@ -2237,7 +2062,7 @@ var __publicField = (obj, key, value) => {
         }
       }
       if (this.sync) {
-        this.store.addChangeListener(this.key, (pre, curr, remote) => {
+        this.store.addChangeListener(this.key, (curr) => {
           this.provider.value = curr;
         });
       }
@@ -2249,7 +2074,7 @@ var __publicField = (obj, key, value) => {
         } else {
           this.style.display = "none";
         }
-        this.store.addChangeListener(this.showIf, (pre, curr, remote) => {
+        this.store.addChangeListener(this.showIf, (curr) => {
           if (this.isConnected) {
             if (curr) {
               this.style.display = "";
@@ -2273,7 +2098,7 @@ var __publicField = (obj, key, value) => {
   class ContainerElement extends interface_1$5.IElement {
     constructor() {
       super(...arguments);
-      this.header = ui_1.$ui.tooltip((0, dom_1$5.h)("header-element", { title: "\u83DC\u5355\u680F-\u53EF\u62D6\u52A8\u533A\u57DF" }));
+      this.header = ui_1.$ui.tooltip((0, dom_1$5.h)("header-element", { title: "菜单栏-可拖动区域" }));
       this.body = (0, dom_1$5.h)("div", { className: "body", clientHeight: window.innerHeight / 2 });
       this.footer = (0, dom_1$5.h)("div", { className: "footer" });
     }
@@ -2430,7 +2255,7 @@ var __publicField = (obj, key, value) => {
       this.classList.add(this.type);
       Object.assign(this.style, this.modalStyle || {});
       const profile = (0, dom_1$2.h)("div", {
-        innerText: this.profile || "\u5F39\u7A97\u6765\u81EA: OCS " + (((_a = tampermonkey_1.$gm.getInfos()) === null || _a === void 0 ? void 0 : _a.script.version) || ""),
+        innerText: this.profile || "弹窗来自: OCS " + (((_a = tampermonkey_1.$gm.getInfos()) === null || _a === void 0 ? void 0 : _a.script.version) || ""),
         className: "modal-profile"
       });
       this._title.innerText = this.title;
@@ -2446,7 +2271,7 @@ var __publicField = (obj, key, value) => {
         this.footerContainer.append(this.modalInput);
         if (this.cancelButton === void 0) {
           this.cancelButton = (0, dom_1$2.h)("button", { className: "modal-cancel-button" });
-          this.cancelButton.innerText = this.cancelButtonText || "\u53D6\u6D88";
+          this.cancelButton.innerText = this.cancelButtonText || "取消";
           this.cancelButton.onclick = () => {
             var _a2, _b;
             (_a2 = this.onCancel) === null || _a2 === void 0 ? void 0 : _a2.call(this);
@@ -2456,7 +2281,7 @@ var __publicField = (obj, key, value) => {
         }
         if (this.confirmButton === void 0) {
           this.confirmButton = (0, dom_1$2.h)("button", { className: "modal-confirm-button" });
-          this.confirmButton.innerText = this.confirmButtonText || "\u786E\u5B9A";
+          this.confirmButton.innerText = this.confirmButtonText || "确定";
           this.confirmButton.onclick = () => __awaiter$2(this, void 0, void 0, function* () {
             var _b, _c;
             if ((yield (_b = this.onConfirm) === null || _b === void 0 ? void 0 : _b.call(this, this.modalInput.value)) !== false) {
@@ -2663,7 +2488,7 @@ var __publicField = (obj, key, value) => {
         if (e.ctrlKey && e.key === config2.render.switchKey) {
           e.stopPropagation();
           e.preventDefault();
-          this.setVisual(config2.store.getVisual() === "close" ? "normal" : "close");
+          this.setVisual(config2.store.getVisual() === "hidden" ? "normal" : "hidden");
         }
       }, { capture: true });
       handleVisible();
@@ -2685,7 +2510,7 @@ var __publicField = (obj, key, value) => {
       });
     }
     initHeader(urls, currentPanelName) {
-      const profile = utils_1.$ui.tooltip((0, utils_1.h)("div", { className: "profile", title: "\u83DC\u5355\u680F\uFF08\u53EF\u62D6\u52A8\u533A\u57DF\uFF09" }, this.config.render.title || "\u65E0\u6807\u9898"));
+      const profile = utils_1.$ui.tooltip((0, utils_1.h)("div", { className: "profile", title: "菜单栏（可拖动区域）" }, this.config.render.title || "无标题"));
       const scriptDropdowns = [];
       for (const project2 of this.projects) {
         const dropdown2 = (0, utils_1.h)("dropdown-element");
@@ -2715,7 +2540,7 @@ var __publicField = (obj, key, value) => {
           if (selected) {
             dropdown2.classList.add("active");
           }
-          dropdown2.triggerElement = (0, utils_1.h)("div", { className: "dropdown-trigger-element " }, project2.name);
+          dropdown2.triggerElement = (0, utils_1.h)("div", { className: "dropdown-trigger-element" }, project2.name);
           dropdown2.triggerElement.style.padding = "0px 8px";
           dropdown2.content.append(...options);
           scriptDropdowns.push(dropdown2);
@@ -2724,11 +2549,11 @@ var __publicField = (obj, key, value) => {
       const isMinimize = () => this.config.store.getVisual() === "minimize";
       const visualSwitcher = utils_1.$ui.tooltip((0, utils_1.h)("div", {
         className: "switch ",
-        title: isMinimize() ? "\u70B9\u51FB\u5C55\u5F00\u7A97\u53E3" : "\u70B9\u51FB\u6700\u5C0F\u5316\u7A97\u53E3",
+        title: isMinimize() ? "点击展开窗口" : "点击最小化窗口",
         innerHTML: isMinimize() ? expandSvg : minimizeSvg,
         onclick: () => {
           this.setVisual(isMinimize() ? "normal" : "minimize");
-          visualSwitcher.title = isMinimize() ? "\u70B9\u51FB\u5C55\u5F00\u7A97\u53E3" : "\u70B9\u51FB\u6700\u5C0F\u5316\u7A97\u53E3";
+          visualSwitcher.title = isMinimize() ? "点击展开窗口" : "点击最小化窗口";
           visualSwitcher.innerHTML = isMinimize() ? expandSvg : minimizeSvg;
         }
       }));
@@ -2771,8 +2596,8 @@ var __publicField = (obj, key, value) => {
       this.container.className = "";
       if (value === "minimize") {
         this.container.classList.add("minimize");
-      } else if (value === "close") {
-        this.container.classList.add("close");
+      } else if (value === "hidden") {
+        this.container.classList.add("hidden");
       } else {
         this.container.classList.add("normal");
       }
@@ -2797,7 +2622,7 @@ var __publicField = (obj, key, value) => {
         } else if (script2.namespace) {
           yield this.config.store.setCurrentPanelName(script2.namespace);
         } else {
-          console.warn("[ERROR]", `${script2.name} \u65E0\u6CD5\u7F6E\u9876\uFF0C projectName \u4E0E namespace \u90FD\u4E3A undefined`);
+          console.warn("[ERROR]", `${script2.name} 无法置顶， projectName 与 namespace 都为 undefined`);
         }
       });
     }
@@ -2806,6 +2631,9 @@ var __publicField = (obj, key, value) => {
     }
     normal() {
       this.setVisual("normal");
+    }
+    hidden() {
+      this.setVisual("hidden");
     }
     message(type, attrs) {
       if (typeof attrs === "string") {
@@ -2816,22 +2644,32 @@ var __publicField = (obj, key, value) => {
       return message2;
     }
     menu(label, config2) {
-      this.extraMenuBar.style.display = "flex";
-      const btn = (0, utils_1.h)("button", label);
-      btn.addEventListener("click", () => {
+      return __awaiter$1(this, void 0, void 0, function* () {
+        this.extraMenuBar.style.display = "flex";
+        const btn = (0, utils_1.h)("button", label);
+        btn.addEventListener("click", () => {
+          if (config2.scriptPanelLink) {
+            this.pin(config2.scriptPanelLink).then(() => {
+              this.normal();
+            }).catch(console.error);
+          }
+        });
         if (config2.scriptPanelLink) {
-          this.pin(config2.scriptPanelLink).then(() => {
-            this.normal();
-          }).catch(console.error);
+          const full_name = (config2.scriptPanelLink.projectName ? config2.scriptPanelLink.projectName + " -> " : "") + config2.scriptPanelLink.name;
+          btn.title = "快捷跳转：" + full_name;
+          btn.setAttribute("data-name", (config2.scriptPanelLink.projectName + "-" + config2.scriptPanelLink.name).replace(/\s/g, "_"));
+          btn.classList.add("script-panel-link");
         }
+        this.extraMenuBar.append(utils_1.$ui.tooltip(btn));
+        const name = yield utils_1.$store.getTab(utils_1.$const.TAB_CURRENT_PANEL_NAME);
+        if (config2.scriptPanelLink) {
+          if (isCurrentPanel(config2.scriptPanelLink.projectName, config2.scriptPanelLink, name)) {
+            this.extraMenuBar.querySelectorAll(".script-panel-link").forEach((el) => el.classList.remove("active"));
+            btn.classList.add("active");
+          }
+        }
+        return btn;
       });
-      if (config2.scriptPanelLink) {
-        const full_name = (config2.scriptPanelLink.projectName ? config2.scriptPanelLink.projectName + " -> " : "") + config2.scriptPanelLink.name;
-        btn.title = "\u5FEB\u6377\u8DF3\u8F6C\uFF1A" + full_name;
-        btn.classList.add("script-panel-link");
-      }
-      this.extraMenuBar.append(btn);
-      return btn;
     }
     mount(parent) {
       parent.children[utils_1.$.random(0, parent.children.length - 1)].after(this.wrapper);
@@ -2939,10 +2777,6 @@ var __publicField = (obj, key, value) => {
   let mounted = false;
   function start(startConfig) {
     return __awaiter(this, void 0, void 0, function* () {
-      const uid = yield store_1.$store.getTab(const_1.$const.TAB_UID);
-      if (uid === void 0) {
-        yield store_1.$store.setTab(const_1.$const.TAB_UID, common_1.$.uuid());
-      }
       startConfig.projects = startConfig.projects.map((p) => {
         for (const key in p.scripts) {
           if (Object.prototype.hasOwnProperty.call(p.scripts, key)) {
@@ -2958,6 +2792,12 @@ var __publicField = (obj, key, value) => {
         script2.emit("start", startConfig);
         (_a = script2.onstart) === null || _a === void 0 ? void 0 : _a.call(script2, startConfig);
       });
+      const uid = yield store_1.$store.getTab(const_1.$const.TAB_UID);
+      if (uid === void 0) {
+        yield store_1.$store.setTab(const_1.$const.TAB_UID, common_1.$.uuid());
+      }
+      const urls = yield store_1.$store.getTab(const_1.$const.TAB_URLS);
+      yield store_1.$store.setTab(const_1.$const.TAB_URLS, Array.from(new Set((urls || []).concat(location.href))));
       let active = false;
       if (document.readyState === "interactive") {
         active = true;
@@ -2991,9 +2831,6 @@ var __publicField = (obj, key, value) => {
             var _a;
             script2.emit("complete");
             (_a = script2.oncomplete) === null || _a === void 0 ? void 0 : _a.call(script2, startConfig);
-          });
-          store_1.$store.getTab(const_1.$const.TAB_URLS).then((urls) => {
-            store_1.$store.setTab(const_1.$const.TAB_URLS, Array.from(new Set(urls || [])).concat(location.href));
           });
         }
       });
@@ -3050,89 +2887,99 @@ var __publicField = (obj, key, value) => {
   }
   start$1.addFunctionEventListener = addFunctionEventListener;
   function mount(startConfig) {
-    if (mounted === true) {
-      return;
-    }
-    mounted = true;
-    if (startConfig === void 0 || startConfig.renderConfig === void 0) {
-      console.warn("the script will not have ui because the renderConfig is not defined.");
-      return;
-    }
-    store_1.$store.setTab(const_1.$const.TAB_URLS, []);
-    if (self === top) {
-      const { projects, renderConfig } = startConfig;
-      if (typeof renderConfig.renderScript === "undefined") {
-        console.warn("the script will not have ui because the RenderScript is not defined.");
+    return __awaiter(this, void 0, void 0, function* () {
+      if (mounted === true) {
         return;
       }
-      const scripts = common_1.$.getMatchedScripts(projects, [location.href]).filter((s) => !!s.hideInPanel === false);
-      if (scripts.length <= 0) {
+      mounted = true;
+      if (startConfig === void 0 || startConfig.renderConfig === void 0) {
+        console.warn("the script will not have ui because the renderConfig is not defined.");
         return;
       }
-      const RenderScript2 = renderConfig.renderScript;
-      const win = new custom_window_1.CustomWindow(startConfig.projects, store_1.$store, {
-        render: {
-          title: renderConfig.title,
-          styles: renderConfig.styles,
-          defaultPanelName: renderConfig.defaultPanelName,
-          fontsize: RenderScript2.cfg.fontsize,
-          switchPoint: RenderScript2.cfg.switchPoint,
-          switchKey: "o"
-        },
-        store: {
-          getPosition: () => {
-            return { x: RenderScript2.cfg.x, y: RenderScript2.cfg.y };
-          },
-          setPosition: (x, y) => {
-            RenderScript2.cfg.x = x;
-            RenderScript2.cfg.y = y;
-          },
-          getVisual: () => {
-            return RenderScript2.cfg.visual;
-          },
-          setVisual: (size) => {
-            RenderScript2.cfg.visual = size;
-          },
-          getRenderURLs() {
-            return __awaiter(this, void 0, void 0, function* () {
-              return yield store_1.$store.getTab(const_1.$const.TAB_URLS);
-            });
-          },
-          setRenderURLs(urls) {
-            return __awaiter(this, void 0, void 0, function* () {
-              return yield store_1.$store.setTab(const_1.$const.TAB_URLS, urls);
-            });
-          },
-          getCurrentPanelName() {
-            return __awaiter(this, void 0, void 0, function* () {
-              return yield store_1.$store.getTab(const_1.$const.TAB_CURRENT_PANEL_NAME);
-            });
-          },
-          setCurrentPanelName(name) {
-            return __awaiter(this, void 0, void 0, function* () {
-              return yield store_1.$store.setTab(const_1.$const.TAB_CURRENT_PANEL_NAME, name);
-            });
-          }
+      if (self === top) {
+        const { projects, renderConfig } = startConfig;
+        if (typeof renderConfig.renderScript === "undefined") {
+          console.warn("the script will not have ui because the RenderScript is not defined.");
+          return;
         }
-      });
-      RenderScript2.onConfigChange("fontsize", (fs) => {
-        win.setFontSize(fs);
-      });
-      RenderScript2.onConfigChange("visual", (v) => {
-        win.setVisual(v);
-      });
-      store_1.$store.addTabChangeListener(const_1.$const.TAB_URLS, (0, debounce_1.default)((urls) => {
-        win.changeRenderURLs(urls);
-      }, 2e3));
-      store_1.$store.addTabChangeListener(const_1.$const.TAB_CURRENT_PANEL_NAME, (name) => {
-        win.changePanel(name);
-      });
-      win.mount(document.body);
-      elements_1.$elements.tooltipContainer = (0, dom_1.h)("div", { className: "tooltip-container" });
-      elements_1.$elements.root = win.root;
-      win.container.append(elements_1.$elements.tooltipContainer);
-      start$1.$win = win;
-    }
+        const scripts = common_1.$.getMatchedScripts(projects, [location.href]).filter((s) => !!s.hideInPanel === false);
+        if (scripts.length <= 0) {
+          return;
+        }
+        const RenderScript2 = renderConfig.renderScript;
+        const win = new custom_window_1.CustomWindow(startConfig.projects, store_1.$store, {
+          render: {
+            title: renderConfig.title,
+            styles: renderConfig.styles,
+            defaultPanelName: renderConfig.defaultPanelName,
+            fontsize: RenderScript2.cfg.fontsize,
+            switchPoint: RenderScript2.cfg.switchPoint,
+            switchKey: "o"
+          },
+          store: {
+            getPosition: () => {
+              return { x: RenderScript2.cfg.x, y: RenderScript2.cfg.y };
+            },
+            setPosition: (x, y) => {
+              RenderScript2.cfg.x = x;
+              RenderScript2.cfg.y = y;
+            },
+            getVisual: () => {
+              return RenderScript2.cfg.visual;
+            },
+            setVisual: (size) => {
+              RenderScript2.cfg.visual = size;
+            },
+            getRenderURLs() {
+              return __awaiter(this, void 0, void 0, function* () {
+                return yield store_1.$store.getTab(const_1.$const.TAB_URLS);
+              });
+            },
+            setRenderURLs(urls) {
+              return __awaiter(this, void 0, void 0, function* () {
+                return yield store_1.$store.setTab(const_1.$const.TAB_URLS, urls);
+              });
+            },
+            getCurrentPanelName() {
+              return __awaiter(this, void 0, void 0, function* () {
+                return yield store_1.$store.getTab(const_1.$const.TAB_CURRENT_PANEL_NAME);
+              });
+            },
+            setCurrentPanelName(name) {
+              return __awaiter(this, void 0, void 0, function* () {
+                return yield store_1.$store.setTab(const_1.$const.TAB_CURRENT_PANEL_NAME, name);
+              });
+            }
+          }
+        });
+        RenderScript2.onConfigChange("fontsize", (fs) => {
+          win.setFontSize(fs);
+        });
+        store_1.$store.addTabChangeListener(const_1.$const.TAB_URLS, (0, debounce_1.default)((curr, pre) => {
+          if (JSON.stringify(curr) === JSON.stringify(pre)) {
+            return;
+          }
+          win.changeRenderURLs(curr);
+        }, 2e3));
+        store_1.$store.addTabChangeListener(const_1.$const.TAB_CURRENT_PANEL_NAME, (curr, pre) => {
+          if (curr === pre) {
+            return;
+          }
+          win.changePanel(curr);
+          updateMenusState(win, curr);
+        });
+        win.mount(document.body);
+        elements_1.$elements.tooltipContainer = (0, dom_1.h)("div", { className: "tooltip-container" });
+        elements_1.$elements.root = win.root;
+        win.container.append(elements_1.$elements.tooltipContainer);
+        start$1.$win = win;
+      }
+    });
+  }
+  function updateMenusState(win, name) {
+    var _a;
+    win.root.querySelectorAll(".extra-menu-bar .script-panel-link").forEach((el) => el.classList.remove("active"));
+    (_a = win.root.querySelector('.extra-menu-bar [data-name="' + name.replace(/\s/g, "_") + '"]')) === null || _a === void 0 ? void 0 : _a.classList.add("active");
   }
   var render = {};
   (function(exports3) {
@@ -3145,19 +2992,19 @@ var __publicField = (obj, key, value) => {
     const start_12 = start$1;
     const interfaces_1 = interfaces;
     const createRenderScript = (config2) => new script_1.Script({
-      name: (config2 === null || config2 === void 0 ? void 0 : config2.name) || "\u7A97\u53E3\u8BBE\u7F6E",
-      matches: (config2 === null || config2 === void 0 ? void 0 : config2.matches) || [["\u6240\u6709", /.*/]],
+      name: (config2 === null || config2 === void 0 ? void 0 : config2.name) || "窗口设置",
+      matches: (config2 === null || config2 === void 0 ? void 0 : config2.matches) || [["所有", /.*/]],
       namespace: "render.panel",
       configs: {
         notes: {
           defaultValue: ui_12.$ui.notes([
             [
-              "\u5982\u679C\u9700\u8981\u9690\u85CF\u6574\u4E2A\u7A97\u53E3\uFF0C\u53EF\u4EE5\u70B9\u51FB\u4E0B\u65B9\u9690\u85CF\u6309\u94AE\uFF0C",
-              "\u9690\u85CF\u540E\u53EF\u4EE5\u5FEB\u901F\u4E09\u51FB\u5C4F\u5E55\u4E2D\u7684\u4EFB\u610F\u5730\u65B9",
-              "\u6765\u91CD\u65B0\u5728\u9F20\u6807\u4F4D\u7F6E\u663E\u793A\u7A97\u53E3\u3002"
+              "如果需要隐藏整个窗口，可以点击下方隐藏按钮，",
+              "隐藏后可以快速三击屏幕中的任意地方",
+              "来重新在鼠标位置显示窗口。"
             ],
-            "\u7A97\u53E3\u8FDE\u7EED\u70B9\u51FB\u663E\u793A\u7684\u6B21\u6570\u53EF\u4EE5\u81EA\u5B9A\u4E49\uFF0C\u9ED8\u8BA4\u4E3A\u4E09\u6B21",
-            ["\u7A97\u53E3\u5FEB\u6377\u952E\u5217\u8868\uFF1A", "ctrl + o : \u9690\u85CF/\u6253\u5F00 \u9762\u677F"]
+            "窗口连续点击显示的次数可以自定义，默认为三次",
+            ["窗口快捷键列表：", "ctrl + o : 隐藏/打开 面板"]
           ]).outerHTML
         },
         x: { defaultValue: window.innerWidth * 0.1 },
@@ -3167,18 +3014,18 @@ var __publicField = (obj, key, value) => {
           defaultValue: true
         },
         fontsize: {
-          label: "\u5B57\u4F53\u5927\u5C0F\uFF08\u50CF\u7D20\uFF09",
+          label: "字体大小（像素）",
           attrs: { type: "number", min: 12, max: 24, step: 1 },
           defaultValue: 14
         },
         switchPoint: {
-          label: "\u7A97\u53E3\u663E\u793A\u8FDE\u70B9\uFF08\u6B21\u6570\uFF09",
+          label: "窗口显示连点（次数）",
           attrs: {
             type: "number",
             min: 3,
             max: 10,
             step: 1,
-            title: "\u8BBE\u7F6E\u5F53\u8FDE\u7EED\u70B9\u51FB\u5C4F\u5E55 N \u6B21\u65F6\uFF0C\u53EF\u4EE5\u8FDB\u884C\u9762\u677F\u7684 \u9690\u85CF/\u663E\u793A \u5207\u6362\uFF0C\u9ED8\u8BA4\u8FDE\u7EED\u70B9\u51FB\u5C4F\u5E55\u4E09\u4E0B"
+            title: "设置当连续点击屏幕 N 次时，可以进行面板的 隐藏/显示 切换，默认连续点击屏幕三下"
           },
           defaultValue: 3
         }
@@ -3200,21 +3047,21 @@ var __publicField = (obj, key, value) => {
         };
       },
       onrender({ panel }) {
-        const closeBtn = (0, dom_12.h)("button", { className: "base-style-button" }, "\u9690\u85CF\u7A97\u53E3");
+        const closeBtn = (0, dom_12.h)("button", { className: "base-style-button" }, "隐藏窗口");
         closeBtn.onclick = () => {
           if (this.cfg.firstCloseAlert) {
             exports3.$modal.confirm({
               content: ui_12.$ui.notes([
-                "\u9690\u85CF\u811A\u672C\u9875\u9762\u540E\uFF0C\u5FEB\u901F\u70B9\u51FB\u9875\u9762\u4E09\u4E0B\uFF08\u53EF\u4EE5\u5728\u60AC\u6D6E\u7A97\u8BBE\u7F6E\u4E2D\u8C03\u6574\u6B21\u6570\uFF09\u5373\u53EF\u91CD\u65B0\u663E\u793A\u811A\u672C\u3002\u5982\u679C\u4E09\u4E0B\u65E0\u6548\uFF0C\u53EF\u4EE5\u5C1D\u8BD5\u5220\u9664\u811A\u672C\u91CD\u65B0\u5B89\u88C5\u3002",
-                "\u8BF7\u786E\u8BA4\u662F\u5426\u5173\u95ED\u3002\uFF08\u6B64\u540E\u4E0D\u518D\u663E\u793A\u6B64\u5F39\u7A97\uFF09"
+                "隐藏脚本页面后，快速点击页面三下（可以在悬浮窗设置中调整次数）即可重新显示脚本。如果三下无效，可以尝试删除脚本重新安装。",
+                "请确认是否关闭。（此后不再显示此弹窗）"
               ]),
               onConfirm: () => {
-                this.cfg.visual = "close";
+                start_12.$win === null || start_12.$win === void 0 ? void 0 : start_12.$win.hidden();
                 this.cfg.firstCloseAlert = false;
               }
             });
           } else {
-            this.cfg.visual = "close";
+            start_12.$win === null || start_12.$win === void 0 ? void 0 : start_12.$win.hidden();
           }
         };
         panel.body.replaceChildren((0, dom_12.h)("hr"), closeBtn);
@@ -3300,13 +3147,218 @@ var __publicField = (obj, key, value) => {
     __exportStar(elements, exports3);
     __exportStar(interfaces, exports3);
   })(lib);
+  const ListOfActions = [
+    "click",
+    "check",
+    "dblclick",
+    "bringToFront",
+    "dragAndDrop",
+    "fill",
+    "focus",
+    "hover",
+    "screenshot",
+    "selectOption",
+    "setInputFiles",
+    "tap",
+    "press",
+    "reload",
+    "waitForRequest",
+    "waitForResponse",
+    "waitForSelector"
+  ];
+  class RemotePlaywright {
+    static async getRemotePage(show_debug_cursor, logger) {
+      if (this.currentPage) {
+        return this.currentPage;
+      }
+      if (!this.authToken) {
+        try {
+          this.authToken = await request("http://localhost:15319/get-actions-key", {
+            type: "GM_xmlhttpRequest",
+            method: "get",
+            responseType: "text"
+          });
+          this.currentPage = this.createRemotePage(this.authToken, { show_debug_cursor, logger });
+          return this.currentPage;
+        } catch (e) {
+          console.log(e);
+          return void 0;
+        }
+      } else {
+        this.currentPage = this.createRemotePage(this.authToken, { show_debug_cursor, logger });
+        return this.currentPage;
+      }
+    }
+    static createRemotePage(authToken, configs) {
+      const page = /* @__PURE__ */ Object.create({});
+      configs = configs || {};
+      configs.logger = configs.logger || console.debug;
+      for (const property of ListOfActions) {
+        Reflect.set(page, property, async (...args) => {
+          var _a, _b, _c;
+          let data;
+          if (property === "click") {
+            if (args[0] instanceof Element) {
+              const el = args[0];
+              const options = args[1] || {};
+              await scrollToElement(el);
+              await $.sleep(500);
+              const rect = el.getBoundingClientRect();
+              const elFromPoint = (_a = lib.$elements.root) == null ? void 0 : _a.elementFromPoint(
+                rect.left + rect.width / 2,
+                rect.top + rect.height / 2
+              );
+              if (elFromPoint && lib.$elements.root && lib.$elements.root.contains(elFromPoint)) {
+                const panel = lib.$elements.root.querySelector("container-element");
+                if (panel) {
+                  lib.$message.info({ content: "检测到脚本阻挡点击位置，已自动移开", duration: 2 });
+                  await $.transition(panel, "left", 0.1, rect.left + rect.width / 2 + 100 + "px", { reset_ms: 1 });
+                }
+              }
+              if (configs == null ? void 0 : configs.show_debug_cursor) {
+                showMousePointer(el);
+              }
+              data = {
+                page: window.location.href,
+                property: "mouse.click",
+                args: [
+                  rect.left + rect.width / 2,
+                  rect.top + rect.height / 2,
+                  {
+                    button: options.button,
+                    clickCount: options.clickCount,
+                    delay: options.delay
+                  }
+                ]
+              };
+            } else if (typeof args[0] === "string") {
+              const el = document.querySelector(args[0]);
+              if (el) {
+                await scrollToElement(el);
+                if (configs == null ? void 0 : configs.show_debug_cursor) {
+                  showMousePointer(el);
+                }
+              }
+            }
+          }
+          if (!data) {
+            data = { page: window.location.href, property, args };
+          }
+          (_b = configs == null ? void 0 : configs.logger) == null ? void 0 : _b.call(configs, "[RP]: ", JSON.stringify(data));
+          try {
+            const res = await request("/ocs-script-actions", {
+              type: "fetch",
+              method: "post",
+              responseType: ["waitForRequest", "waitForResponse", "reload"].includes(property) ? "json" : "text",
+              headers: {
+                "auth-token": authToken
+              },
+              data
+            });
+            return res;
+          } catch (e) {
+            (_c = configs == null ? void 0 : configs.logger) == null ? void 0 : _c.call(configs, "[RP-ERROR]: ", JSON.stringify(data));
+            return void 0;
+          }
+        });
+      }
+      console.log(page);
+      return page;
+    }
+  }
+  RemotePlaywright.authToken = "";
+  RemotePlaywright.currentPage = void 0;
+  function scrollToElement(el) {
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    return $.sleep(200);
+  }
+  function showMousePointer(el) {
+    setTimeout(() => {
+      const rect = el.getBoundingClientRect();
+      const div = document.createElement("div");
+      div.textContent = "";
+      div.style.position = "fixed";
+      div.style.zIndex = "99999";
+      div.style.width = "20px";
+      div.style.height = "20px";
+      div.style.border = "2px solid red";
+      div.style.borderRadius = "50%";
+      div.style.left = rect.left + rect.width / 2 - 11 + "px";
+      div.style.top = rect.top + rect.height / 2 - 11 + "px";
+      document.body.append(div);
+      setTimeout(() => {
+        div.remove();
+      }, 500);
+    }, 100);
+  }
+  function defaultWorkTypeResolver(ctx) {
+    function count(selector) {
+      let c = 0;
+      for (const option of ctx.elements.options || []) {
+        if ((option == null ? void 0 : option.querySelector(selector)) !== null) {
+          c++;
+        }
+      }
+      return c;
+    }
+    return count('[type="radio"]') === 2 ? "judgement" : count('[type="radio"]') > 2 ? "single" : count('[type="checkbox"]') > 2 ? "multiple" : count("textarea") >= 1 ? "completion" : void 0;
+  }
+  function isPlainAnswer(answer) {
+    answer = answer.trim();
+    if (answer.length > 8 || !/[A-Z]/.test(answer)) {
+      return false;
+    }
+    const counter = {};
+    let min = 0;
+    for (let i = 0; i < answer.length; i++) {
+      if (answer.charCodeAt(i) < min) {
+        return false;
+      }
+      min = answer.charCodeAt(i);
+      counter[min] = (counter[min] || 0) + 1;
+    }
+    for (const key in counter) {
+      if (counter[key] !== 1) {
+        return false;
+      }
+    }
+    return true;
+  }
+  function resolvePlainAnswer(answer) {
+    const resolve = answer.trim().replace(/[,，、 #]/g, "").trim();
+    if (isPlainAnswer(resolve)) {
+      return resolve;
+    }
+  }
+  function splitAnswer(answer, separators = ["===", "#", "---", "###", "|", ";", "；"]) {
+    answer = answer.trim();
+    if (answer.length === 0) {
+      return [];
+    }
+    separators = separators.length === 0 ? ["===", "#", "---", "###", "|", ";", "；"] : separators;
+    separators = separators.filter((el) => el.trim().length > 0);
+    try {
+      const json = JSON.parse(answer);
+      if (Array.isArray(json)) {
+        return json.map(String).filter((el) => el.trim().length > 0);
+      }
+    } catch {
+      for (const sep of separators) {
+        if (answer.split(sep).length > 1) {
+          return answer.split(sep).filter((el) => el.trim().length > 0);
+        }
+      }
+    }
+    return [answer];
+  }
   function defaultQuestionResolve(ctx) {
     return {
       async single(infos, options, handler) {
         const allAnswer = infos.map((res) => res.results.map((res2) => splitAnswer(res2.answer, ctx.answerSeparators)).flat()).flat();
         const optionStrings = options.map((o) => removeRedundant(o.innerText));
+        let ratings = [];
         if (ctx.answerMatchMode === "similar") {
-          const ratings = answerSimilar(allAnswer, optionStrings);
+          ratings = answerSimilar(allAnswer, optionStrings);
           let index = -1;
           let max = 0;
           let ans = "";
@@ -3347,7 +3399,7 @@ var __publicField = (obj, key, value) => {
             }
           }
         }
-        return { finish: false, allAnswer, options: optionStrings };
+        return { finish: false, allAnswer, ratings: ratings.map((r) => r.rating), options: optionStrings };
       },
       async multiple(infos, options, handler) {
         var _a;
@@ -3438,7 +3490,7 @@ var __publicField = (obj, key, value) => {
               if (options[index] === void 0) {
                 continue;
               }
-              await handler("single", options[index].innerText, options[index], ctx);
+              await handler("multiple", options[index].innerText, options[index], ctx);
               plainOptions.push(options[index]);
             }
           }
@@ -3453,18 +3505,18 @@ var __publicField = (obj, key, value) => {
         for (const answers of infos.map((info) => info.results.map((res) => res.answer))) {
           let matches = function(target, options2) {
             return options2.some(
-              (option) => clearString(removeRedundant(option), "\u221A", "\xD7") === clearString(removeRedundant(target), "\u221A", "\xD7")
+              (option) => clearString(removeRedundant(option), "√", "×") === clearString(removeRedundant(target), "√", "×")
             );
           };
           const correctWords = [
-            "\u662F",
-            "\u5BF9",
-            "\u6B63\u786E",
-            "\u786E\u5B9A",
-            "\u221A",
-            "\u5BF9\u7684",
-            "\u662F\u7684",
-            "\u6B63\u786E\u7684",
+            "是",
+            "对",
+            "正确",
+            "确定",
+            "√",
+            "对的",
+            "是的",
+            "正确的",
             "true",
             "True",
             "T",
@@ -3472,18 +3524,18 @@ var __publicField = (obj, key, value) => {
             "1"
           ];
           const incorrectWords = [
-            "\u975E",
-            "\u5426",
-            "\u9519",
-            "\u9519\u8BEF",
-            "\xD7",
+            "非",
+            "否",
+            "错",
+            "错误",
+            "×",
             "X",
-            "\u9519\u7684",
-            "\u4E0D\u5BF9",
-            "\u4E0D\u6B63\u786E\u7684",
-            "\u4E0D\u6B63\u786E",
-            "\u4E0D\u662F",
-            "\u4E0D\u662F\u7684",
+            "错的",
+            "不对",
+            "不正确的",
+            "不正确",
+            "不是",
+            "不是的",
             "false",
             "False",
             "F",
@@ -3562,13 +3614,13 @@ var __publicField = (obj, key, value) => {
       const questionRoots = typeof this.opts.root === "string" ? Array.from(document.querySelectorAll(this.opts.root)) : this.opts.root;
       this.totalQuestionCount += questionRoots.length;
       if (options == null ? void 0 : options.enable_debug) {
-        console.debug("\u5F00\u59CB\u7B54\u9898", this);
-        console.debug("\u9898\u76EE\u6570\u91CF: ", questionRoots.length);
-        console.debug("\u7236\u8282\u70B9\u5217\u8868: ", questionRoots);
+        console.debug("开始答题", this);
+        console.debug("题目数量: ", questionRoots.length);
+        console.debug("父节点列表: ", questionRoots);
       }
       const results = [];
       if (questionRoots.length === 0) {
-        throw new Error("\u672A\u627E\u5230\u4EFB\u4F55\u9898\u76EE\uFF0C\u7B54\u9898\u7ED3\u675F\u3002");
+        throw new Error("未找到任何题目，答题结束。");
       }
       for (const questionRoot of questionRoots) {
         const ctx = {
@@ -3582,6 +3634,9 @@ var __publicField = (obj, key, value) => {
         await ((_b = (_a = this.opts).onElementSearched) == null ? void 0 : _b.call(_a, ctx.elements, questionRoot));
         ctx.elements.title = (_c = ctx.elements.title) == null ? void 0 : _c.filter(Boolean);
         ctx.elements.options = (_d = ctx.elements.options) == null ? void 0 : _d.filter(Boolean);
+        if (typeof this.opts.work === "object") {
+          ctx.type = this.opts.work.type === void 0 ? defaultWorkTypeResolver(ctx) : typeof this.opts.work.type === "string" ? this.opts.work.type : this.opts.work.type(ctx);
+        }
         results.push({
           requested: false,
           resolved: false,
@@ -3589,10 +3644,10 @@ var __publicField = (obj, key, value) => {
         });
       }
       if (options == null ? void 0 : options.enable_debug) {
-        console.debug("\u4E0A\u4E0B\u6587\u5DF2\u521D\u59CB\u5316: ", results);
+        console.debug("上下文已初始化: ", results);
       }
       const requestThread = async (index) => {
-        var _a2, _b2;
+        var _a2, _b2, _c2;
         let error;
         const result = results[index];
         const ctx = result.ctx || {};
@@ -3603,12 +3658,14 @@ var __publicField = (obj, key, value) => {
         if (this.isStop) {
           await waitForContinuate(() => this.isStop);
         }
-        if (typeof this.opts.work === "object") {
-          ctx.type = this.opts.work.type === void 0 ? defaultWorkTypeResolver(ctx) : typeof this.opts.work.type === "string" ? this.opts.work.type : this.opts.work.type(ctx);
-        }
         ctx.searchInfos = [];
         if (options == null ? void 0 : options.enable_debug) {
-          console.debug("\u5F00\u59CB\u641C\u9898: ", result.ctx);
+          console.groupEnd();
+          console.group(
+            "开始搜题: ",
+            (_a2 = ctx.elements.title) == null ? void 0 : _a2.map((t2) => t2 == null ? void 0 : t2.innerText).filter(Boolean).join(", ").slice(0, 20)
+          );
+          console.log("ctx", result.ctx);
         }
         try {
           ctx.searchInfos = await this.opts.answerer(ctx.elements, ctx) || [];
@@ -3625,27 +3682,27 @@ var __publicField = (obj, key, value) => {
         result.requested = true;
         result.error = error;
         if (options == null ? void 0 : options.enable_debug) {
-          console.debug("\u641C\u9898\u5B8C\u6210: ", index, result.ctx);
+          console.log("搜题结果: ", ctx.searchInfos);
         }
-        await ((_b2 = (_a2 = this.opts).onResultsUpdate) == null ? void 0 : _b2.call(_a2, results[index], index, results));
+        await ((_c2 = (_b2 = this.opts).onResultsUpdate) == null ? void 0 : _c2.call(_b2, results[index], index, results));
+      };
+      const waitForRequested = async (result) => {
+        return new Promise((resolve, reject) => {
+          const interval = setInterval(() => {
+            if ((result == null ? void 0 : result.requested) === true) {
+              clearInterval(interval);
+              clearTimeout(timeout);
+              resolve();
+            }
+          }, 200);
+          const timeout = setTimeout(() => {
+            clearInterval(interval);
+            reject(new Error("答题超时！"));
+          }, 60 * 1e3);
+        });
       };
       const resolverThread = async () => {
-        var _a2, _b2;
-        const waitForRequested = async (result) => {
-          return new Promise((resolve, reject) => {
-            const interval = setInterval(() => {
-              if ((result == null ? void 0 : result.requested) === true) {
-                clearInterval(interval);
-                clearTimeout(timeout);
-                resolve();
-              }
-            }, 200);
-            const timeout = setTimeout(() => {
-              clearInterval(interval);
-              reject(new Error("\u7B54\u9898\u8D85\u65F6\uFF01"));
-            }, 60 * 1e3);
-          });
-        };
+        var _a2, _b2, _c2, _d2;
         for (let index = 0; index < results.length; index++) {
           const result = results[index];
           let error;
@@ -3667,17 +3724,17 @@ var __publicField = (obj, key, value) => {
                     const handler = this.opts.work.handler;
                     res = await resolver(result.ctx.searchInfos, result.ctx.elements.options, handler);
                   } else {
-                    error = "\u9898\u76EE\u7C7B\u578B\u89E3\u6790\u5931\u8D25, \u8BF7\u81EA\u884C\u63D0\u4F9B\u89E3\u6790\u5668, \u6216\u8005\u5FFD\u7565\u6B64\u9898\u3002";
+                    error = "题目类型解析失败, 请自行提供解析器, 或者忽略此题。";
                   }
                 } else {
-                  error = "elements.options \u4E3A\u7A7A ! \u4F7F\u7528\u9ED8\u8BA4\u5904\u7406\u5668, \u5FC5\u987B\u63D0\u4F9B\u9898\u76EE\u9009\u9879\u7684\u9009\u62E9\u5668\u3002";
+                  error = "elements.options 为空 ! 使用默认处理器, 必须提供题目选项的选择器。";
                 }
               } else {
                 const work2 = this.opts.work;
                 res = await work2(result.ctx);
               }
             } else {
-              error = "\u641C\u7D22\u4E0D\u5230\u7B54\u6848, \u8BF7\u91CD\u65B0\u8FD0\u884C, \u6216\u8005\u5FFD\u7565\u6B64\u9898\u3002";
+              error = "搜索不到答案, 请重新运行, 或者忽略此题。";
             }
           } catch (err) {
             error = (err == null ? void 0 : err.message) || err;
@@ -3686,9 +3743,13 @@ var __publicField = (obj, key, value) => {
           result.result = res || { finish: false };
           result.resolved = true;
           if (options == null ? void 0 : options.enable_debug) {
-            console.debug("\u7B54\u9898\u5B8C\u6210: ", index, result);
+            console.log(
+              "答题完成: ",
+              (_b2 = (_a2 = result.ctx) == null ? void 0 : _a2.elements.title) == null ? void 0 : _b2.map((t2) => t2 == null ? void 0 : t2.innerText).join(", ").slice(0, 20),
+              result
+            );
           }
-          await ((_b2 = (_a2 = this.opts).onResultsUpdate) == null ? void 0 : _b2.call(_a2, result, index, results));
+          await ((_d2 = (_c2 = this.opts).onResultsUpdate) == null ? void 0 : _d2.call(_c2, result, index, results));
         }
       };
       const requestThreadHandler = async () => {
@@ -3707,7 +3768,7 @@ var __publicField = (obj, key, value) => {
             }, 100);
             const timeout = setTimeout(() => {
               clearInterval(interval);
-              reject(new Error("\u83B7\u53D6\u7EBF\u7A0B\u9501\u8D85\u65F6\uFF01"));
+              reject(new Error("获取线程锁超时！"));
             }, 3 * 60 * 1e3);
           });
         };
@@ -3781,13 +3842,13 @@ var __publicField = (obj, key, value) => {
     const searchInfos = [];
     const temp = JSON.parse(JSON.stringify(answererWrappers));
     if (temp.length === 0) {
-      throw new Error("\u9898\u5E93\u914D\u7F6E\u4E0D\u80FD\u4E3A\u7A7A\uFF0C\u8BF7\u914D\u7F6E\u540E\u91CD\u65B0\u5F00\u59CB\u81EA\u52A8\u7B54\u9898\u3002");
+      throw new Error("题库配置不能为空，请配置后重新开始自动答题。");
     }
     await Promise.all(
       temp.map(async (wrapper) => {
         var _a;
         const {
-          name = "\u672A\u77E5\u9898\u5E93",
+          name = "未知题库",
           homepage = "#",
           method = "get",
           type = "fetch",
@@ -3813,7 +3874,7 @@ var __publicField = (obj, key, value) => {
               if (typeof wrapperData[key] === "object" && Reflect.has(wrapperData[key], "handler")) {
                 const handler2 = Function(Reflect.get(wrapperData[key], "handler"))();
                 if (typeof handler2 !== "function") {
-                  throw new Error("data \u5B57\u6BB5\u89E3\u6790\u5668\u5FC5\u987B\u8FD4\u56DE\u4E00\u4E2A\u51FD\u6570");
+                  throw new Error("data 字段解析器必须返回一个函数");
                 }
                 const result = handler2(env);
                 Reflect.set(data, key, result);
@@ -3823,7 +3884,7 @@ var __publicField = (obj, key, value) => {
             });
             requestData = data;
           } else {
-            throw new Error("\u4E0D\u652F\u6301\u7684\u8BF7\u6C42\u65B9\u5F0F");
+            throw new Error("不支持的请求方式");
           }
           const responseData = await Promise.race([
             request(url.toString(), {
@@ -3836,11 +3897,11 @@ var __publicField = (obj, key, value) => {
             $.sleep(((_a = AnswerWrapperHandlerConfig.timeout_seconds) != null ? _a : 60) * 1e3)
           ]);
           if (responseData === void 0) {
-            throw new Error("\u9898\u5E93\u8BF7\u6C42\u8D85\u65F6\uFF0C\u53EF\u80FD\u662F\u9898\u5E93\u95EE\u9898\uFF0C\u6216\u8005\u8BF7\u68C0\u67E5\u7F51\u7EDC\u6216\u8005\u91CD\u8BD5\u3002");
+            throw new Error("题库请求超时，可能是题库问题，或者请检查网络或者重试。");
           }
           const responseHandler = Function(handler)();
           if (typeof responseHandler !== "function") {
-            throw new Error("handler \u54CD\u5E94\u5904\u7406\u5668\u5FC5\u987B\u8FD4\u56DE\u4E00\u4E2A\u51FD\u6570");
+            throw new Error("handler 响应处理器必须返回一个函数");
           }
           const info = responseHandler(responseData);
           if (info && Array.isArray(info)) {
@@ -3877,7 +3938,7 @@ var __publicField = (obj, key, value) => {
             results: [],
             response: void 0,
             data: void 0,
-            error: (error == null ? void 0 : error.message) || "\u9898\u5E93\u8FDE\u63A5\u5931\u8D25"
+            error: (error == null ? void 0 : error.message) || "题库连接失败"
           });
         }
       })
@@ -3907,39 +3968,39 @@ var __publicField = (obj, key, value) => {
           for (let i = 0; i < aw.length; i++) {
             const item = aw[i];
             if (typeof item.name !== "string") {
-              throw new Error(`\u7B2C ${i + 1} \u4E2A\u9898\u5E93\u7684 \u540D\u5B57(name) \u4E3A\u7A7A`);
+              throw new Error(`第 ${i + 1} 个题库的 名字(name) 为空`);
             }
             if (typeof item.url !== "string") {
-              throw new Error(`\u7B2C ${i + 1} \u4E2A\u9898\u5E93\u7684 \u63A5\u53E3\u5730\u5740(url) \u4E3A\u7A7A`);
+              throw new Error(`第 ${i + 1} 个题库的 接口地址(url) 为空`);
             }
             if (typeof item.handler !== "string") {
-              throw new Error(`\u7B2C ${i + 1} \u4E2A\u9898\u5E93\u7684 \u89E3\u6790\u5668(handler) \u4E3A\u7A7A`);
+              throw new Error(`第 ${i + 1} 个题库的 解析器(handler) 为空`);
             }
             if (item.headers && typeof item.headers !== "object") {
-              throw new Error(`\u7B2C ${i + 1} \u4E2A\u9898\u5E93\u7684 \u5934\u90E8\u4FE1\u606F(header) \u5E94\u4E3A \u5BF9\u8C61 \u683C\u5F0F`);
+              throw new Error(`第 ${i + 1} 个题库的 头部信息(header) 应为 对象 格式`);
             }
             if (item.data && typeof item.data !== "object") {
-              throw new Error(`\u7B2C ${i + 1} \u4E2A\u9898\u5E93\u7684 \u63D0\u4EA4\u6570\u636E(data) \u5E94\u4E3A \u5BF9\u8C61 \u683C\u5F0F`);
+              throw new Error(`第 ${i + 1} 个题库的 提交数据(data) 应为 对象 格式`);
             }
             const contentTypes = ["json", "text"];
             if (item.contentType && contentTypes.every((i2) => i2 !== item.contentType)) {
-              throw new Error(`\u7B2C ${i + 1} \u4E2A\u9898\u5E93\u7684 contentType \u5FC5\u987B\u4E3A\u4EE5\u4E0B\u9009\u9879\u4E2D\u7684\u4E00\u4E2A  ${contentTypes.join(", ")}`);
+              throw new Error(`第 ${i + 1} 个题库的 contentType 必须为以下选项中的一个  ${contentTypes.join(", ")}`);
             }
             const methods = ["post", "get"];
             if (item.method && methods.every((i2) => i2 !== item.method)) {
-              throw new Error(`\u7B2C ${i + 1} \u4E2A\u9898\u5E93\u7684 method \u5FC5\u987B\u4E3A\u4EE5\u4E0B\u9009\u9879\u4E2D\u7684\u4E00\u4E2A  ${methods.join(", ")}`);
+              throw new Error(`第 ${i + 1} 个题库的 method 必须为以下选项中的一个  ${methods.join(", ")}`);
             }
             const types = ["fetch", "GM_xmlhttpRequest"];
             if (item.type && types.every((i2) => i2 !== item.type)) {
-              throw new Error(`\u7B2C ${i + 1} \u4E2A\u9898\u5E93\u7684 type \u5FC5\u987B\u4E3A\u4EE5\u4E0B\u9009\u9879\u4E2D\u7684\u4E00\u4E2A  ${types.join(", ")}`);
+              throw new Error(`第 ${i + 1} 个题库的 type 必须为以下选项中的一个  ${types.join(", ")}`);
             }
           }
           return aw;
         } else {
-          throw new Error("\u9898\u5E93\u4E3A\u7A7A\uFF01");
+          throw new Error("题库为空！");
         }
       } else {
-        throw new Error("\u9898\u5E93\u914D\u7F6E\u683C\u5F0F\u9519\u8BEF\uFF01");
+        throw new Error("题库配置格式错误！");
       }
     }
     static fromJSONString(json) {
@@ -3947,7 +4008,7 @@ var __publicField = (obj, key, value) => {
       try {
         return JSON.parse(raw);
       } catch {
-        throw new Error(`\u683C\u5F0F\u9519\u8BEF\uFF0C\u5FC5\u987B\u4E3A\uFF1Ajson\u5B57\u7B26\u4E32 \u6216 \u9898\u5E93\u914D\u7F6E\u94FE\u63A5`);
+        throw new Error(`格式错误，必须为：json字符串 或 题库配置链接`);
       }
     }
     static async fromURL(url) {
@@ -4958,7 +5019,7 @@ var __publicField = (obj, key, value) => {
     text: edit(inline.gfm.text).replace("\\b_", "\\b_| {2,}\\n").replace(/\{2,\}/g, "*").getRegex()
   };
   function smartypants(text) {
-    return text.replace(/---/g, "\u2014").replace(/--/g, "\u2013").replace(/(^|[-\u2014/(\[{"\s])'/g, "$1\u2018").replace(/'/g, "\u2019").replace(/(^|[-\u2014/(\[{\u2018\s])"/g, "$1\u201C").replace(/"/g, "\u201D").replace(/\.{3}/g, "\u2026");
+    return text.replace(/---/g, "—").replace(/--/g, "–").replace(/(^|[-\u2014/(\[{"\s])'/g, "$1‘").replace(/'/g, "’").replace(/(^|[-\u2014/(\[{\u2018\s])"/g, "$1“").replace(/"/g, "”").replace(/\.{3}/g, "…");
   }
   function mangle(text) {
     let out = "", i, ch;
@@ -6166,6 +6227,9 @@ ${content}</tr>
   var parseOptions_1 = parseOptions$1;
   const numeric = /^[0-9]+$/;
   const compareIdentifiers$1 = (a, b) => {
+    if (typeof a === "number" && typeof b === "number") {
+      return a === b ? 0 : a < b ? -1 : 1;
+    }
     const anum = numeric.test(a);
     const bnum = numeric.test(b);
     if (anum && bnum) {
@@ -6265,7 +6329,25 @@ ${content}</tr>
       if (!(other instanceof SemVer$2)) {
         other = new SemVer$2(other, this.options);
       }
-      return compareIdentifiers(this.major, other.major) || compareIdentifiers(this.minor, other.minor) || compareIdentifiers(this.patch, other.patch);
+      if (this.major < other.major) {
+        return -1;
+      }
+      if (this.major > other.major) {
+        return 1;
+      }
+      if (this.minor < other.minor) {
+        return -1;
+      }
+      if (this.minor > other.minor) {
+        return 1;
+      }
+      if (this.patch < other.patch) {
+        return -1;
+      }
+      if (this.patch > other.patch) {
+        return 1;
+      }
+      return 0;
     }
     comparePre(other) {
       if (!(other instanceof SemVer$2)) {
@@ -6455,7 +6537,7 @@ ${content}</tr>
   };
   var valid_1 = valid;
   const RenderScript = lib.createRenderScript({
-    name: "\u{1F5BC}\uFE0F \u7A97\u53E3\u8BBE\u7F6E"
+    name: "🖼️ 窗口设置"
   });
   const transformImgLinkOfQuestion = (question) => {
     const dom2 = new DOMParser().parseFromString(question, "text/html");
@@ -6473,34 +6555,48 @@ ${content}</tr>
       this.question = "";
     }
     connectedCallback() {
-      const question = transformImgLinkOfQuestion(this.question || "\u65E0");
+      const question = transformImgLinkOfQuestion(this.question || "无");
+      const type_text = {
+        single: "单选题",
+        multiple: "多选题",
+        judgement: "判断题",
+        completion: "填空题"
+      };
+      const type_label = this.type ? Reflect.get(type_text, this.type) : "";
       this.append(
-        lib.h("div", [lib.h("span", { innerHTML: question }), createQuestionTitleExtra(this.question)], (div) => {
-          div.style.padding = "4px";
-        }),
-        lib.h("hr")
+        lib.h(
+          "div",
+          [
+            ...type_label ? [lib.h("span", { className: "search-result-question-type" }, type_label)] : [],
+            lib.h("span", { innerHTML: question }),
+            createQuestionTitleExtra(this.question)
+          ],
+          (div) => {
+            div.className = "search-info-title";
+          }
+        )
       );
       this.append(
         ...this.infos.map((info) => {
-          return lib.h("details", { open: true }, [
+          return lib.h("details", { open: true, className: "search-info-details" }, [
             lib.h("summary", [lib.h("a", { href: info.homepage, innerText: info.name, target: "_blank" })]),
-            ...(info.error ? [lib.h("span", { className: "error" }, [info.error || "\u7F51\u7EDC\u9519\u8BEF\u6216\u8005\u672A\u77E5\u9519\u8BEF"])] : []).concat([
+            ...(info.error ? [lib.h("span", { className: "error" }, [info.error || "网络错误或者未知错误"])] : []).concat([
               ...info.results.map((ans) => {
-                const title = transformImgLinkOfQuestion(ans[0] || this.question || "\u65E0");
-                const answer = transformImgLinkOfQuestion(ans[1] || "\u65E0");
+                const title = transformImgLinkOfQuestion(ans[0] || this.question || "无");
+                const answer = transformImgLinkOfQuestion(ans[1] || "无");
                 const extra_data = JSON.parse(JSON.stringify(ans[2] || {}));
                 if (extra_data.ai) {
                   extra_data.tags = extra_data.tags || [];
                   extra_data.tags.push({
                     text: "AI",
-                    title: "\u6B64\u7B54\u6848\u7531 AI \u751F\u6210\uFF0C\u4EC5\u4F9B\u53C2\u8003",
+                    title: "此答案由 AI 生成，仅供参考",
                     color: "blue"
                   });
                 }
                 return lib.h("div", { className: "search-result" }, [
                   lib.h("div", { className: "question" }, [lib.h("span", { innerHTML: title })]),
                   lib.h("div", { className: "answer" }, [
-                    lib.h("span", "\u7B54\u6848\uFF1A"),
+                    lib.h("span", "答案："),
                     ...extra_data.tags ? extra_data.tags.map(
                       (tag) => lib.$ui.tooltip(
                         lib.h("code", {
@@ -6525,9 +6621,9 @@ ${content}</tr>
     }
   }
   const $render = {
-    moveToEdge() {
+    moveToEdge(x = 80, y = 100) {
       CommonProject.scripts.render.methods.minimize();
-      CommonProject.scripts.render.methods.setPosition(80, 100);
+      CommonProject.scripts.render.methods.setPosition(x, y);
     }
   };
   const state$6 = {
@@ -6545,20 +6641,20 @@ ${content}</tr>
     }
   };
   const BackgroundProject = lib.Project.create({
-    name: "\u540E\u53F0",
+    name: "后台",
     domains: [],
     scripts: {
       elementRegister: new lib.Script({
-        name: "\u{1F517} \u5143\u7D20\u6CE8\u518C",
+        name: "🔗 元素注册",
         hideInPanel: true,
-        matches: [["\u6240\u6709\u9875\u9762", /.*/]],
+        matches: [["所有页面", /.*/]],
         onstart() {
           lib.$.loadCustomElements([SearchInfosElement]);
         }
       }),
       console: new lib.Script({
-        name: "\u{1F4C4} \u65E5\u5FD7\u8F93\u51FA",
-        matches: [["\u6240\u6709", /.*/]],
+        name: "📄 日志输出",
+        matches: [["所有", /.*/]],
         namespace: "render.console",
         configs: {
           logs: {
@@ -6566,13 +6662,13 @@ ${content}</tr>
           }
         },
         onrender({ panel }) {
-          const getTypeDesc = (type) => type === "info" ? "\u4FE1\u606F" : type === "error" ? "\u9519\u8BEF" : type === "warn" ? "\u8B66\u544A" : type === "debug" ? "\u8C03\u8BD5" : "\u65E5\u5FD7";
+          const getTypeDesc = (type) => type === "info" ? "信息" : type === "error" ? "错误" : type === "warn" ? "警告" : type === "debug" ? "调试" : "日志";
           const createLog = (log) => {
             const date = new Date(log.time);
             const item = lib.h(
               "div",
               {
-                title: "\u53CC\u51FB\u590D\u5236\u65E5\u5FD7\u4FE1\u606F",
+                title: "双击复制日志信息",
                 className: "item"
               },
               [
@@ -6599,7 +6695,7 @@ ${content}</tr>
               div2.replaceChildren(...logs2);
             } else {
               div2.replaceChildren(
-                lib.h("div", "\u6682\u65E0\u4EFB\u4F55\u65E5\u5FD7", (div3) => {
+                lib.h("div", "暂无任何日志", (div3) => {
                   div3.style.textAlign = "center";
                 })
               );
@@ -6632,34 +6728,31 @@ ${content}</tr>
         }
       }),
       appConfigSync: new lib.Script({
-        name: "\u{1F504}\uFE0F \u8F6F\u4EF6\u914D\u7F6E\u540C\u6B65",
+        name: "🔄️ 软件配置同步",
         namespace: "background.app",
-        matches: [["\u6240\u6709\u9875\u9762", /./]],
+        matches: [["所有页面", /./]],
         hideInPanel: lib.$gm.getInfos() === void 0,
         configs: {
           notes: {
             defaultValue: lib.$ui.notes([
               [
                 lib.h("span", [
-                  "\u5982\u679C\u60A8\u4F7F\u7528",
-                  lib.h("a", { href: "https://docs.ocsjs.com/docs/app", target: "_blank" }, "OCS\u684C\u9762\u8F6F\u4EF6"),
-                  "\u542F\u52A8\u6D4F\u89C8\u5668\uFF0C\u5E76\u4F7F\u7528\u6B64\u811A\u672C\uFF0C"
+                  "如果您使用",
+                  lib.h("a", { href: "https://docs.ocsjs.com/docs/app", target: "_blank" }, "OCS桌面软件"),
+                  "启动浏览器，并使用此脚本，"
                 ]),
-                "\u6211\u4EEC\u4F1A\u540C\u6B65\u8F6F\u4EF6\u4E2D\u7684\u914D\u7F6E\u5230\u6B64\u811A\u672C\u4E0A\uFF0C\u65B9\u4FBF\u591A\u4E2A\u6D4F\u89C8\u5668\u7684\u7BA1\u7406\u3002",
-                "\u7A97\u53E3\u8BBE\u7F6E\u4EE5\u53CA\u540E\u53F0\u9762\u677F\u6240\u6709\u8BBE\u7F6E\u4E0D\u4F1A\u8FDB\u884C\u540C\u6B65\u3002"
+                "我们会同步软件中的配置到此脚本上，方便多个浏览器的管理。",
+                "窗口设置以及后台面板所有设置不会进行同步。"
               ],
-              "\u5982\u679C\u4E0D\u662F\uFF0C\u60A8\u53EF\u4EE5\u5FFD\u7565\u6B64\u811A\u672C\u3002"
+              "如果不是，您可以忽略此脚本。"
             ]).outerHTML
           },
-          sync: {
-            defaultValue: false
-          },
-          connected: {
-            defaultValue: false
+          sync_status: {
+            defaultValue: "unconnect"
           },
           closeSync: {
             defaultValue: false,
-            label: "\u5173\u95ED\u540C\u6B65",
+            label: "关闭同步",
             attrs: {
               type: "checkbox"
             }
@@ -6669,11 +6762,26 @@ ${content}</tr>
           panel.lockWrapper.remove();
           panel.configsContainer.classList.remove("lock");
           const update = () => {
-            if (this.cfg.sync) {
-              const tip = lib.h("div", { className: "notes card" }, [`\u5DF2\u6210\u529F\u540C\u6B65\u8F6F\u4EF6\u4E2D\u7684\u914D\u7F6E.`]);
+            if (this.cfg.closeSync) {
+              const tip = lib.h("div", { className: "notes card" }, ["已关闭同步。"]);
               panel.body.replaceChildren(lib.h("hr"), tip);
-            } else if (this.cfg.connected) {
-              const tip = lib.h("div", { className: "notes card" }, [`\u5DF2\u6210\u529F\u8FDE\u63A5\u5230\u8F6F\u4EF6\uFF0C\u4F46\u914D\u7F6E\u4E3A\u7A7A\u3002`]);
+            } else if (this.cfg.sync_status === "synced") {
+              const tip = lib.h("div", { className: "notes card" }, [`已成功同步软件中的配置.`]);
+              panel.body.replaceChildren(lib.h("hr"), tip);
+            } else if (this.cfg.sync_status === "unconnect") {
+              const tip = lib.h("div", { className: "notes card" }, ["未同步软件配置，可能是桌面软件未启动。"]);
+              panel.body.replaceChildren(lib.h("hr"), tip);
+            } else if (this.cfg.sync_status === "not_playwright_environment") {
+              const tip = lib.h("div", { className: "notes card" }, ["当前浏览器不是由桌面端软件启动，无法同步配置。"]);
+              panel.body.replaceChildren(lib.h("hr"), tip);
+            } else if (this.cfg.sync_status === "not_open_sync") {
+              const tip = lib.h("div", { className: "notes card" }, ["桌面端软件未开启配置同步功能"]);
+              panel.body.replaceChildren(lib.h("hr"), tip);
+            } else if (this.cfg.sync_status === "empty_config") {
+              const tip = lib.h("div", { className: "notes card" }, ["已成功连接到软件，但配置为空。"]);
+              panel.body.replaceChildren(lib.h("hr"), tip);
+            } else {
+              const tip = lib.h("div", { className: "notes card" }, ["同步状态未知，请稍后重试。"]);
               panel.body.replaceChildren(lib.h("hr"), tip);
             }
           };
@@ -6681,110 +6789,148 @@ ${content}</tr>
           this.offConfigChange(state$6.app.listenerIds.sync);
           this.offConfigChange(state$6.app.listenerIds.connected);
           this.offConfigChange(state$6.app.listenerIds.closeSync);
-          state$6.app.listenerIds.sync = this.onConfigChange("sync", update);
-          state$6.app.listenerIds.connected = this.onConfigChange("connected", update);
+          state$6.app.listenerIds.connected = this.onConfigChange("sync_status", update);
           state$6.app.listenerIds.closeSync = this.onConfigChange("closeSync", (closeSync) => {
             if (closeSync) {
-              this.cfg.sync = false;
-              this.cfg.connected = false;
-              lib.$message.success({ content: "\u5DF2\u5173\u95ED\u540C\u6B65\uFF0C\u5237\u65B0\u9875\u9762\u540E\u751F\u6548" });
+              this.cfg.sync_status = "not_open_sync";
+              lib.$message.success({ content: "已关闭同步，刷新页面后生效" });
             }
           });
         },
         async onactive() {
           var _a;
-          if (lib.$.isInTopWindow() && this.cfg.closeSync === false) {
-            this.cfg.sync = false;
+          if (lib.$.isInTopWindow()) {
+            if (this.cfg.closeSync) {
+              $console.log("配置同步已关闭");
+              return;
+            }
+            this.cfg.sync_status = "unconnect";
             try {
               const res = await request("http://localhost:15319/browser", {
                 type: "GM_xmlhttpRequest",
                 method: "get",
                 responseType: "json"
               });
-              this.cfg.connected = true;
-              if (res && Object.keys(res).length) {
-                for (const key in res) {
-                  if (Object.prototype.hasOwnProperty.call(res, key)) {
-                    if (RenderScript.namespace && key.startsWith(RenderScript.namespace)) {
-                      Reflect.deleteProperty(res, key);
-                    }
-                    for (const scriptKey in BackgroundProject.scripts) {
-                      if (Object.prototype.hasOwnProperty.call(BackgroundProject.scripts, scriptKey)) {
-                        const script2 = Reflect.get(BackgroundProject.scripts, scriptKey);
-                        if (script2.namespace && key.startsWith(script2.namespace)) {
-                          Reflect.deleteProperty(res, key);
-                        }
-                      }
-                    }
-                  }
-                }
-                for (const project2 of definedProjects()) {
-                  for (const key in project2.scripts) {
-                    if (Object.prototype.hasOwnProperty.call(project2.scripts, key)) {
-                      const script2 = project2.scripts[key];
-                      for (const ck in script2.configs) {
-                        if (Object.prototype.hasOwnProperty.call(script2.configs, ck)) {
-                          if (((_a = script2.configs[ck].extra) == null ? void 0 : _a.appConfigSync) === false) {
-                            Reflect.deleteProperty(res, lib.$.namespaceKey(script2.namespace, ck));
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-                for (const key in res) {
-                  if (Object.prototype.hasOwnProperty.call(res, key)) {
-                    lib.$store.set(key, res[key]);
-                  }
-                }
-                for (const project2 of definedProjects()) {
-                  if (project2.name === BackgroundProject.name) {
-                    continue;
-                  }
-                  for (const key in project2.scripts) {
-                    if (Object.prototype.hasOwnProperty.call(project2.scripts, key)) {
-                      const script2 = project2.scripts[key];
-                      const originalRender = script2.onrender;
-                      script2.onrender = ({ panel, header: header2 }) => {
-                        var _a2, _b;
-                        originalRender == null ? void 0 : originalRender({ panel, header: header2 });
-                        if (panel.configsContainer.children.length) {
-                          panel.configsContainer.classList.add("lock");
-                          panel.lockWrapper.style.width = ((_a2 = panel.configsContainer.clientWidth) != null ? _a2 : panel.clientWidth) + "px";
-                          panel.lockWrapper.style.height = ((_b = panel.configsContainer.clientHeight) != null ? _b : panel.clientHeight) + "px";
-                          panel.configsContainer.prepend(panel.lockWrapper);
-                          panel.lockWrapper.title = "\u{1F6AB}\u5DF2\u540C\u6B65OCS\u684C\u9762\u7248\u8F6F\u4EF6\u914D\u7F6E\uFF0C\u5982\u9700\u4FEE\u6539\u8BF7\u5728\u684C\u9762\u7248\u8F6F\u4EF6\u7684\u5DE6\u4FA7\u680F\u8BBE\u7F6E-\u901A\u7528\u8BBE\u7F6E-OCS\u914D\u7F6E\uFF0C\u4E2D\u8FDB\u884C\u4FEE\u6539\u3002\u6216\u8005\u524D\u5F80\u811A\u672C\u60AC\u6D6E\u7A97:\u540E\u53F0-\u8F6F\u4EF6\u914D\u7F6E\u540C\u6B65 \u5173\u95ED\u914D\u7F6E\u540C\u6B65\u529F\u80FD\u3002";
-                          panel.lockWrapper = lib.$ui.tooltip(panel.lockWrapper);
-                        }
-                      };
-                      if (script2.panel && script2.header) {
-                        script2.onrender({ panel: script2.panel, header: script2.header });
-                      }
-                    }
-                  }
-                }
-                this.cfg.sync = true;
+              if (!res) {
+                this.cfg.sync_status = "unconnect";
+                return;
               }
+              const open_sync = await request("http://localhost:15319/is-browser-config-sync", {
+                type: "GM_xmlhttpRequest",
+                method: "get",
+                responseType: "text"
+              });
+              if (open_sync !== "true") {
+                this.cfg.sync_status = "not_open_sync";
+                return;
+              }
+              if (Object.keys(res).length === 0) {
+                this.cfg.sync_status = "not_open_sync";
+                return;
+              }
+              const environment_res = await request("/ocs-environment", {
+                type: "fetch",
+                method: "get"
+              });
+              const environment = environment_res == null ? void 0 : environment_res.environment;
+              if (!environment || environment !== "playwright") {
+                this.cfg.sync_status = "not_playwright_environment";
+                return;
+              }
+              for (const key in res) {
+                if (Object.prototype.hasOwnProperty.call(res, key)) {
+                  if (RenderScript.namespace && key.startsWith(RenderScript.namespace)) {
+                    Reflect.deleteProperty(res, key);
+                  }
+                  for (const scriptKey in BackgroundProject.scripts) {
+                    if (Object.prototype.hasOwnProperty.call(BackgroundProject.scripts, scriptKey)) {
+                      const script2 = Reflect.get(BackgroundProject.scripts, scriptKey);
+                      if (script2.namespace && key.startsWith(script2.namespace)) {
+                        Reflect.deleteProperty(res, key);
+                      }
+                    }
+                  }
+                }
+              }
+              for (const project2 of definedProjects()) {
+                for (const key in project2.scripts) {
+                  if (Object.prototype.hasOwnProperty.call(project2.scripts, key)) {
+                    const script2 = project2.scripts[key];
+                    for (const ck in script2.configs) {
+                      if (Object.prototype.hasOwnProperty.call(script2.configs, ck)) {
+                        if (((_a = script2.configs[ck].extra) == null ? void 0 : _a.appConfigSync) === false) {
+                          Reflect.deleteProperty(res, lib.$.namespaceKey(script2.namespace, ck));
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+              for (const key in res) {
+                if (Object.prototype.hasOwnProperty.call(res, key)) {
+                  lib.$store.set(key, res[key]);
+                }
+              }
+              for (const project2 of definedProjects()) {
+                if (project2.name === BackgroundProject.name) {
+                  continue;
+                }
+                for (const key in project2.scripts) {
+                  if (Object.prototype.hasOwnProperty.call(project2.scripts, key)) {
+                    const script2 = project2.scripts[key];
+                    const originalRender = script2.onrender;
+                    script2.onrender = ({ panel, header: header2 }) => {
+                      var _a2, _b;
+                      originalRender == null ? void 0 : originalRender({ panel, header: header2 });
+                      if (panel.configsContainer.children.length) {
+                        panel.configsContainer.classList.add("lock");
+                        panel.lockWrapper.style.width = ((_a2 = panel.configsContainer.clientWidth) != null ? _a2 : panel.clientWidth) + "px";
+                        panel.lockWrapper.style.height = ((_b = panel.configsContainer.clientHeight) != null ? _b : panel.clientHeight) + "px";
+                        panel.configsContainer.prepend(panel.lockWrapper);
+                        panel.lockWrapper.title = "🚫已同步OCS桌面版软件配置，如需修改请在桌面版软件的左侧栏设置-通用设置-OCS配置，中进行修改。\n\n或者前往脚本悬浮窗:后台-软件配置同步 关闭配置同步功能。\n\n可双击强制修改，并关闭同步配置";
+                        panel.lockWrapper = lib.$ui.tooltip(panel.lockWrapper);
+                        panel.lockWrapper.addEventListener("dblclick", () => {
+                          var _a3;
+                          panel.configsContainer.classList.remove("lock");
+                          panel.lockWrapper.remove();
+                          script2.onrender = originalRender;
+                          lib.$message.warn({
+                            content: "已解除配置同步，可正常修改配置。想开启同步请前往：后台-软件配置同步",
+                            duration: 10
+                          });
+                          this.cfg.closeSync = true;
+                          if (script2.panel && script2.header) {
+                            (_a3 = script2.onrender) == null ? void 0 : _a3.call(script2, { panel: script2.panel, header: script2.header });
+                          }
+                        });
+                      }
+                    };
+                    if (script2.panel && script2.header) {
+                      script2.onrender({ panel: script2.panel, header: script2.header });
+                    }
+                  }
+                }
+              }
+              this.cfg.sync_status = "synced";
             } catch (e) {
               console.error(e);
-              this.cfg.sync = false;
-              this.cfg.connected = false;
+              this.cfg.sync_status = "unconnect";
             }
           }
         }
       }),
       update: new lib.Script({
-        name: "\u{1F4E5} \u66F4\u65B0\u6A21\u5757",
-        matches: [["\u6240\u6709\u9875\u9762", /.*/]],
+        name: "📥 更新模块",
+        matches: [["所有页面", /.*/]],
         namespace: "background.update",
         configs: {
           notes: {
-            defaultValue: "\u811A\u672C\u81EA\u52A8\u66F4\u65B0\u6A21\u5757\uFF0C\u5982\u679C\u6709\u65B0\u7684\u7248\u672C\u4F1A\u81EA\u52A8\u901A\u77E5\u3002"
+            defaultValue: "脚本自动更新模块，如果有新的版本会自动通知。"
           },
           autoNotify: {
             defaultValue: true,
-            label: "\u5F00\u542F\u66F4\u65B0\u901A\u77E5",
-            attrs: { type: "checkbox", title: "\u5F53\u6709\u6700\u65B0\u7684\u7248\u672C\u65F6\u81EA\u52A8\u5F39\u7A97\u901A\u77E5\uFF0C\u9ED8\u8BA4\u5F00\u542F" }
+            label: "开启更新通知",
+            attrs: { type: "checkbox", title: "当有最新的版本时自动弹窗通知，默认开启" }
           },
           notToday: {
             defaultValue: -1
@@ -6810,17 +6956,17 @@ ${content}</tr>
           if (!infos) {
             return;
           }
-          const changeLog = lib.h("button", { className: "base-style-button-secondary" }, "\u{1F4C4}\u67E5\u770B\u66F4\u65B0\u65E5\u5FD7");
+          const changeLog = lib.h("button", { className: "base-style-button-secondary" }, "📄查看更新日志");
           changeLog.onclick = () => CommonProject.scripts.apps.methods.showChangelog();
           const updatePage = ((_a = this.startConfig) == null ? void 0 : _a.updatePage) || "";
           panel.body.replaceChildren(
             lib.h("div", { className: "card" }, [
               lib.h("hr"),
-              lib.h("div", ["\u6700\u65B0\u7248\u672C\uFF1A" + version["last-version"] + " - ", changeLog]),
+              lib.h("div", ["最新版本：" + version["last-version"] + " - ", changeLog]),
               lib.h("hr"),
-              lib.h("div", "\u5F53\u524D\u7248\u672C\uFF1A" + infos.script.version),
-              lib.h("div", "\u811A\u672C\u7BA1\u7406\u5668\uFF1A" + infos.scriptHandler),
-              lib.h("div", ["\u811A\u672C\u66F4\u65B0\u94FE\u63A5\uFF1A", lib.h("a", { target: "_blank", href: updatePage }, [updatePage || "\u65E0"])])
+              lib.h("div", "当前版本：" + infos.script.version),
+              lib.h("div", "脚本管理器：" + infos.scriptHandler),
+              lib.h("div", ["脚本更新链接：", lib.h("a", { target: "_blank", href: updatePage }, [updatePage || "无"])])
             ])
           );
           console.log("versions", {
@@ -6835,7 +6981,7 @@ ${content}</tr>
               const infos = lib.$gm.getInfos();
               if (infos) {
                 if (!!valid_1(infos.script.version) === false) {
-                  lib.$message.error(`\u5F53\u524D\u7248\u672C\u53F7 (${infos.script.version}) \u4E0D\u7B26\u5408semver\u7248\u672C\u4E66\u5199\u89C4\u8303\uFF0C\u8BF7\u91CD\u65B0\u4FEE\u6539\u7248\u672C\u3002`);
+                  lib.$message.error(`当前版本号 (${infos.script.version}) 不符合semver版本书写规范，请重新修改版本。`);
                   return;
                 }
                 setTimeout(async () => {
@@ -6847,27 +6993,27 @@ ${content}</tr>
                     const modal2 = lib.$modal.confirm({
                       maskCloseable: false,
                       width: 600,
-                      content: lib.$ui.notes([`\u68C0\u6D4B\u5230\u65B0\u7248\u672C\u53D1\u5E03 ${last} \uFF1A`, [...version.notes || []]]),
+                      content: lib.$ui.notes([`检测到新版本发布 ${last} ：`, [...version.notes || []]]),
                       footer: lib.h("div", [
-                        lib.h("button", { className: "base-style-button-secondary", innerText: "\u8DF3\u8FC7\u6B64\u7248\u672C" }, (btn) => {
+                        lib.h("button", { className: "base-style-button-secondary", innerText: "跳过此版本" }, (btn) => {
                           btn.onclick = () => {
                             this.cfg.ignoreVersions = [...this.cfg.ignoreVersions, last];
                             modal2 == null ? void 0 : modal2.remove();
                           };
                         }),
-                        lib.h("button", { className: "base-style-button-secondary", innerText: "\u4ECA\u65E5\u4E0D\u518D\u63D0\u793A" }, (btn) => {
+                        lib.h("button", { className: "base-style-button-secondary", innerText: "今日不再提示" }, (btn) => {
                           btn.onclick = () => {
                             this.cfg.notToday = new Date().getDate();
                             modal2 == null ? void 0 : modal2.remove();
                           };
                         }),
-                        lib.h("button", { className: "base-style-button", innerText: "\u524D\u5F80\u66F4\u65B0" }, (btn) => {
+                        lib.h("button", { className: "base-style-button", innerText: "前往更新" }, (btn) => {
                           btn.onclick = () => {
                             if (updatePage) {
                               window.open(updatePage, "_blank");
                               modal2 == null ? void 0 : modal2.remove();
                             } else {
-                              lib.$message.error({ content: "\u65E0\u6CD5\u524D\u5F80\u66F4\u65B0\u9875\u9762\uFF0C\u66F4\u65B0\u94FE\u63A5\u4E3A\u7A7A" });
+                              lib.$message.error({ content: "无法前往更新页面，更新链接为空" });
                             }
                           };
                         })
@@ -6881,16 +7027,16 @@ ${content}</tr>
         }
       }),
       dev: new lib.Script({
-        name: "\u{1F6E0}\uFE0F \u5F00\u53D1\u8005\u8C03\u8BD5",
+        name: "🛠️ 开发者调试",
         namespace: "background.dev",
-        matches: [["\u6240\u6709\u9875\u9762", /./]],
+        matches: [["所有页面", /./]],
         configs: {
           notes: {
-            defaultValue: "\u5F00\u53D1\u4EBA\u5458\u8C03\u8BD5\u7528\u3002<br>\u6CE8\u5165OCS_CONTEXT\u5168\u5C40\u53D8\u91CF\u3002\u7528\u6237\u53EF\u5FFD\u7565\u6B64\u9875\u9762\u3002"
+            defaultValue: "开发人员调试用。<br>注入OCS_CONTEXT全局变量。用户可忽略此页面。"
           },
           show_debug_cursor: {
             defaultValue: true,
-            label: "\u8F6F\u4EF6\u8F85\u52A9\u70B9\u51FB\u65F6\u663E\u793A\u9F20\u6807\u4F4D\u7F6E",
+            label: "软件辅助点击时显示鼠标位置",
             attrs: { type: "checkbox" }
           }
         },
@@ -6902,11 +7048,11 @@ ${content}</tr>
           };
         },
         onrender({ panel }) {
-          const injectBtn = lib.h("button", { className: "base-style-button" }, "\u70B9\u51FB\u6CE8\u5165\u5168\u5C40\u53D8\u91CF");
+          const injectBtn = lib.h("button", { className: "base-style-button" }, "点击注入全局变量");
           injectBtn.addEventListener("click", () => {
             lib.$gm.unsafeWindow.OCS_CONTEXT = self;
           });
-          const showTabDataBtn = lib.h("button", { className: "base-style-button" }, "\u663E\u793ATab\u5B58\u50A8");
+          const showTabDataBtn = lib.h("button", { className: "base-style-button" }, "显示Tab存储");
           lib.$gm.getTab((tab) => {
             const els = [];
             for (const key in tab) {
@@ -6925,12 +7071,12 @@ ${content}</tr>
         }
       }),
       appLoginHelper: new lib.Script({
-        name: "\u8F6F\u4EF6\u767B\u5F55\u8F85\u52A9",
+        name: "软件登录辅助",
         matches: [
-          ["\u8D85\u661F\u767B\u5F55", "passport2.chaoxing.com/login"],
-          ["\u667A\u6167\u6811\u767B\u5F55", "passport.zhihuishu.com/login"],
-          ["\u804C\u6559\u4E91\u767B\u5F55", "zjy2.icve.com.cn/portal/login.html"],
-          ["\u667A\u6167\u804C\u6559\u767B\u5F55", "sso.icve.com.cn/sso/auth"]
+          ["超星登录", "passport2.chaoxing.com/login"],
+          ["智慧树登录", "passport.zhihuishu.com/login"],
+          ["职教云登录", "zjy2.icve.com.cn/portal/login.html"],
+          ["智慧职教登录", "sso.icve.com.cn/sso/auth"]
         ],
         hideInPanel: true,
         oncomplete() {
@@ -6940,7 +7086,7 @@ ${content}</tr>
         }
       }),
       errorHandle: new lib.Script({
-        name: "\u5168\u5C40\u9519\u8BEF\u6355\u83B7",
+        name: "全局错误捕获",
         matches: [["", /.*/]],
         hideInPanel: true,
         onstart() {
@@ -6960,42 +7106,42 @@ ${content}</tr>
         }
       }),
       requestList: new lib.Script({
-        name: "\u{1F4C4} \u8BF7\u6C42\u8BB0\u5F55",
+        name: "📄 请求记录",
         matches: [["", /.*/]],
         priority: 99,
         configs: {
           notes: {
             defaultValue: lib.$ui.notes([
-              "\u5F00\u53D1\u4EBA\u5458\u8BF7\u6C42\u8C03\u8BD5\u8BB0\u5F55\u9875\u9762\uFF0C\u5C0F\u767D\u52FF\u5165\uFF0C\u6700\u591A\u53EA\u8BB0\u5F55\u6700\u8FD1\u7684100\u4E2A\u8BF7\u6C42\u6570\u636E",
-              "\u53EF\u6253\u5F00F12\u63A7\u5236\u53F0\u67E5\u770B\u8BF7\u6C42\u65E5\u5FD7\uFF0C\u6216\u8005\u4E0B\u65B9\u7684\u8BF7\u6C42\u5217\u8868"
+              "开发人员请求调试记录页面，小白勿入，最多只记录最近的100个请求数据",
+              "可打开F12控制台查看请求日志，或者下方的请求列表"
             ]).outerHTML
           },
           enable: {
-            label: "\u5F00\u542F\u8BF7\u6C42\u8BB0\u5F55",
+            label: "开启请求记录",
             attrs: { type: "checkbox" },
             defaultValue: false
           },
           methodFilter: {
-            label: "\u65B9\u6CD5\u8FC7\u6EE4",
+            label: "方法过滤",
             tag: "select",
-            attrs: { placeholder: "\u9009\u62E9\u9009\u9879" },
-            options: [["none", "\u65E0"], ["GET"], ["POST"], ["OPTIONS"], ["HEAD"]],
+            attrs: { placeholder: "选择选项" },
+            options: [["none", "无"], ["GET"], ["POST"], ["OPTIONS"], ["HEAD"]],
             defaultValue: "none"
           },
           typeFilter: {
-            label: "\u7C7B\u578B\u8FC7\u6EE4",
+            label: "类型过滤",
             tag: "select",
-            attrs: { placeholder: "\u9009\u62E9\u9009\u9879" },
+            attrs: { placeholder: "选择选项" },
             options: [
-              ["none", "\u65E0"],
-              ["gmxhr", "\u6CB9\u7334API\u8BF7\u6C42\uFF08gmxhr\uFF09"],
-              ["fetch", "\u666E\u901A\u8BF7\u6C42\uFF08fetch\uFF09"]
+              ["none", "无"],
+              ["gmxhr", "油猴API请求（gmxhr）"],
+              ["fetch", "普通请求（fetch）"]
             ],
             defaultValue: "none"
           },
           searchValue: {
-            label: "\u5185\u5BB9\u641C\u7D22",
-            attrs: { placeholder: "\u641C\u7D22 URL/\u8BF7\u6C42\u4F53/\u54CD\u5E94" },
+            label: "内容搜索",
+            attrs: { placeholder: "搜索 URL/请求体/响应" },
             defaultValue: ""
           },
           list: {
@@ -7014,7 +7160,7 @@ ${content}</tr>
                     {
                       className: "base-style-button-secondary",
                       style: { marginRight: "12px" },
-                      innerText: "\u{1F5D1}\uFE0F\u6E05\u7A7A\u8BB0\u5F55"
+                      innerText: "🗑️清空记录"
                     },
                     (btn) => {
                       btn.onclick = () => {
@@ -7023,7 +7169,7 @@ ${content}</tr>
                       };
                     }
                   ),
-                  lib.h("button", { className: "base-style-button", innerText: "\u{1F50D}\u6267\u884C\u641C\u7D22" }, (btn) => {
+                  lib.h("button", { className: "base-style-button", innerText: "🔍执行搜索" }, (btn) => {
                     btn.onclick = () => {
                       if (this.cfg.methodFilter === "none" && this.cfg.typeFilter === "none" && this.cfg.searchValue === "") {
                         render2(this.cfg.list);
@@ -7054,7 +7200,7 @@ ${content}</tr>
                   "div",
                   { style: { backgroundColor: "#292929", overflow: "auto", maxHeight: window.innerHeight / 2 + "px" } },
                   [
-                    ...list.length === 0 ? [lib.h("div", { style: { color: "white", textAlign: "center" } }, "\u6682\u65E0\u6570\u636E")] : [],
+                    ...list.length === 0 ? [lib.h("div", { style: { color: "white", textAlign: "center" } }, "暂无数据")] : [],
                     ...list.map(
                       (item) => lib.h(
                         "div",
@@ -7087,7 +7233,7 @@ ${content}</tr>
                             lib.h(
                               "span",
                               { style: { color: item.response ? "#4eb74e" : "#eb6262", marginRight: "8px" } },
-                              "\u25CF"
+                              "●"
                             ),
                             lib.h(
                               "div",
@@ -7162,13 +7308,13 @@ ${content}</tr>
               details.onload = function(response) {
                 setItem(id, response.responseText, "");
                 data.response = details.responseType === "json" ? response.response : response.responseText;
-                console.log("%c [\u8BF7\u6C42\u6210\u529F]", "color: green; font-weight: bold", data.url, data);
+                console.log("%c [请求成功]", "color: green; font-weight: bold", data.url, data);
                 onload == null ? void 0 : onload.apply(this, [response]);
               };
               details.onerror = function(response) {
                 setItem(id, "", response.error);
                 data.error = response.error;
-                console.log("%c [\u8BF7\u6C42\u5931\u8D25]", "color: red; font-weight: bold", data.url, data);
+                console.log("%c [请求失败]", "color: red; font-weight: bold", data.url, data);
                 onerror == null ? void 0 : onerror.apply(this, [response]);
               };
             }
@@ -7195,18 +7341,108 @@ ${content}</tr>
               }).then((result) => {
                 setItem(id, result, "");
                 data.response = result;
-                console.log("%c [\u8BF7\u6C42\u6210\u529F]", "color: green; font-weight: bold", data.url, data);
+                console.log("%c [请求成功]", "color: green; font-weight: bold", data.url, data);
               });
               res.catch((err) => {
                 setItem(id, "", String(err));
                 data.error = String(err);
-                console.log("%c [\u8BF7\u6C42\u5931\u8D25]", "color: red; font-weight: bold", data.url, data);
+                console.log("%c [请求失败]", "color: red; font-weight: bold", data.url, data);
               });
               return res;
             } else {
               return originalFetch.apply(this, [input, init]);
             }
           };
+        }
+      }),
+      environmentDetect: new lib.Script({
+        name: "🤖 环境检测",
+        matches: [["所有页面", /.*/]],
+        hideInPanel: true,
+        oncomplete() {
+          if (self !== top)
+            return;
+          const matches = [
+            CXProject.scripts.studyDispatcher.matches,
+            ZHSProject.scripts["gxk-study"].matches,
+            ZHSProject.scripts.hike.matches,
+            ZHSProject.scripts["smart-study"].matches,
+            ZHSProject.scripts["wisdom-study"].matches,
+            ZHSProject.scripts["xnk-study"].matches,
+            ICourseProject.scripts.study.matches,
+            IcveMoocProject.scripts.study.matches,
+            ZJYProject.scripts.study.matches
+          ].flat().map((m) => Array.isArray(m) ? m[1] : m);
+          const url = window.location.href;
+          const match = matches.some((regex) => {
+            return typeof regex === "string" ? url.includes(regex) : regex.test(url);
+          });
+          if (!match) {
+            return;
+          }
+          let messageElement;
+          visibleDetect();
+          function visibleDetect() {
+            setTimeout(() => {
+              if (!(messageElement == null ? void 0 : messageElement.isConnected))
+                messageElement = void 0;
+              if (document.visibilityState === "hidden" && !messageElement) {
+                messageElement = lib.$message.warn({
+                  content: "⚠️检测到浏览器最小化/切屏，脚本可能无法正常运行，请保持网课页面在前台！（如果您正在全屏游戏中可以忽略此警告）",
+                  duration: 0
+                });
+              }
+              visibleDetect();
+            }, 1e3);
+          }
+        }
+      }),
+      menus: new lib.Script({
+        name: "📁 菜单管理",
+        hideInPanel: true,
+        matches: [["所有页面", /.*/]],
+        async onactive() {
+          const currentStudyScript = [
+            [CXProject.scripts.studyDispatcher, CXProject.scripts.study],
+            CXProject.scripts.work,
+            ZHSProject.scripts["gxk-study"],
+            ZHSProject.scripts["xnk-study"],
+            ZHSProject.scripts.hike,
+            ZHSProject.scripts["smart-study"],
+            ZHSProject.scripts["wisdom-study"],
+            ZHSProject.scripts["xnk-study"],
+            ZHSProject.scripts["gxk-work"],
+            ZHSProject.scripts["xnk-work"],
+            ZHSProject.scripts["hike-work"],
+            ZHSProject.scripts["smart-work"],
+            ZHSProject.scripts["xnk-work"],
+            [ICourseProject.scripts.dispatcher, ICourseProject.scripts.study],
+            ICourseProject.scripts.work,
+            [ZJYProject.scripts.dispatcher, ZJYProject.scripts.study],
+            ZJYProject.scripts.work,
+            IcveMoocProject.scripts.study,
+            IcveMoocProject.scripts.work
+          ].map((m) => {
+            const url = window.location.href;
+            const data = {
+              matches: Array.isArray(m) ? m[0].matches : m.matches,
+              target: Array.isArray(m) ? m[1] : m
+            };
+            if (data.matches.some((regexp) => {
+              const r = Array.isArray(regexp) ? regexp[1] : regexp;
+              return typeof r === "string" ? url.includes(r) : r.test(url);
+            })) {
+              return data.target;
+            }
+            return void 0;
+          }).find((m) => m !== void 0);
+          await lib.$menu("🏠", { scriptPanelLink: CommonProject.scripts.guide });
+          if (currentStudyScript)
+            await lib.$menu("🖥️", { scriptPanelLink: currentStudyScript });
+          await lib.$menu("🔎", { scriptPanelLink: CommonProject.scripts.workResults });
+          await lib.$menu("⚙️", { scriptPanelLink: CommonProject.scripts.settings });
+          await lib.$menu("📥", { scriptPanelLink: BackgroundProject.scripts.update });
+          await lib.$menu("📄", { scriptPanelLink: BackgroundProject.scripts.console });
         }
       })
     }
@@ -7240,7 +7476,7 @@ ${content}</tr>
     if (opts.answererWrappers.length === 0) {
       onNoAnswererWrappers == null ? void 0 : onNoAnswererWrappers(opts);
       return lib.$message.warn({
-        content: "\u68C0\u6D4B\u5230\u9898\u5E93\u914D\u7F6E\u4E3A\u7A7A\uFF0C\u65E0\u6CD5\u81EA\u52A8\u7B54\u9898\uFF0C\u8BF7\u524D\u5F80 \u901A\u7528-\u5168\u5C40\u8BBE\u7F6E \u9875\u9762\u8FDB\u884C\u914D\u7F6E\u3002",
+        content: "检测到题库配置为空，无法自动答题，请前往 通用-全局设置 页面进行配置。",
         duration: 0
       });
     } else {
@@ -7248,16 +7484,16 @@ ${content}</tr>
       return lib.$message.info({
         duration: options.start_delay_seconds,
         content: lib.h("span", [
-          `${options.start_delay_seconds}\u79D2\u540E\u81EA\u52A8\u7B54\u9898\uFF0C`,
+          `${options.start_delay_seconds}秒后自动答题，`,
           lib.$ui.preventText({
-            name: "\u70B9\u51FB\u53D6\u6D88",
+            name: "点击取消",
             delay: options.start_delay_seconds,
             ondefault: (span) => {
               onrun(opts);
             },
             onprevent(span) {
               const closedMessage = lib.$message.warn({
-                content: "\u5DF2\u5173\u95ED\u6B64\u6B21\u7684\u81EA\u52A8\u7B54\u9898\uFF0C\u8BF7\u624B\u52A8\u5F00\u542F\u6216\u8005\u5FFD\u7565\u6B64\u8B66\u544A\u3002",
+                content: "已关闭此次的自动答题，请手动开启或者忽略此警告。",
                 duration: 0
               });
               if (closedMessage) {
@@ -7297,16 +7533,16 @@ ${content}</tr>
       console.error(err);
       if (String(err).includes(`failed because the user didn't interact with the document first`)) {
         lib.$modal.alert({
-          content: "\u64AD\u653E\u97F3\u89C6\u9891\u5931\u8D25\uFF0C\u7531\u4E8E\u6D4F\u89C8\u5668\u7684\u7528\u6237\u9690\u79C1\u4FDD\u62A4\u63AA\u65BD\uFF0C\u5982\u679C\u8981\u64AD\u653E\u5E26\u6709\u97F3\u91CF\u7684\u89C6\u9891\uFF0C\u6216\u8005\u67D0\u4E9B\u65E0\u6CD5\u81EA\u52A8\u64AD\u653E\u97F3\u89C6\u9891\u7684\u7F51\u7AD9\uFF0C\u60A8\u5FC5\u987B\u5148\u70B9\u51FB\u4E00\u6B21\u9875\u9762\u4E0A\u7684\u4EFB\u610F\u4F4D\u7F6E\u811A\u672C\u624D\u80FD\u8FDB\u884C\u97F3\u89C6\u9891\u7684\u64AD\u653E\uFF0C\u540E\u7EED\u65E0\u9700\u91CD\u65B0\u70B9\u51FB\u3002",
+          content: "播放音视频失败，由于浏览器的用户隐私保护措施，如果要播放带有音量的视频，或者某些无法自动播放音视频的网站，您必须先点击一次页面上的任意位置脚本才能进行音视频的播放，后续无需重新点击。",
           onClose: async () => {
             await tryPlayMedia();
           }
         });
         return true;
       } else if (String(err).includes("The element has no supported sources")) {
-        $console.error("\u5F53\u524D\u89C6\u9891\u65E0\u6CD5\u64AD\u653E\u3002");
+        $console.error("当前视频无法播放。");
       } else {
-        $console.error("\u64AD\u653E\u89C6\u9891\u65F6\u53D1\u751F\u672A\u77E5\u9519\u8BEF\uFF1A" + String(err));
+        $console.error("播放视频时发生未知错误：" + String(err));
       }
       return false;
     }
@@ -7355,11 +7591,11 @@ ${content}</tr>
   function createQuestionTitleExtra(question) {
     const space = lib.$ui.space(
       [
-        lib.$ui.copy("\u590D\u5236", question),
-        lib.h("span", { className: "question-title-extra-btn", innerText: "\u{1F30F}\u767E\u5EA6\u4E00\u4E0B" }, (btn) => {
+        lib.$ui.copy("复制", question),
+        lib.h("span", { className: "question-title-extra-btn", innerText: "🌏百度一下" }, (btn) => {
           btn.onclick = () => {
             popupWin == null ? void 0 : popupWin.close();
-            popupWin = $.createCenteredPopupWindow(`https://www.baidu.com/s?wd=${question}`, "\u767E\u5EA6\u641C\u7D22", {
+            popupWin = $.createCenteredPopupWindow(`https://www.baidu.com/s?wd=${question}`, "百度搜索", {
               width: 1e3,
               height: 800,
               resizable: true,
@@ -7375,11 +7611,6 @@ ${content}</tr>
     return lib.h("div", { style: { textAlign: "right" } }, [space]);
   }
   const TAB_WORK_RESULTS_KEY = "common.work-results.results";
-  const gotoHome = () => {
-    const btn = lib.h("button", { className: "base-style-button-secondary" }, "\u{1F3E1}\u5B98\u7F51\u6559\u7A0B");
-    btn.onclick = () => window.open("https://docs.ocsjs.com", "_blank");
-    return btn;
-  };
   const state$5 = {
     workResult: {
       questionPositionSyncHandler: {
@@ -7409,17 +7640,21 @@ ${content}</tr>
           var _a;
           (_a = document.querySelectorAll(".right-box .list .item").item(index)) == null ? void 0 : _a.click();
         },
+        "zhs-hike": (index) => {
+          var _a;
+          (_a = document.querySelectorAll(".q_main_right .card_ul .card_li").item(index)) == null ? void 0 : _a.click();
+        },
         icve: (index) => {
           var _a;
           (_a = document.querySelectorAll(`.sheet_nums [id*="sheetSeq"]`).item(index)) == null ? void 0 : _a.click();
         },
         zjy: (index) => {
           var _a;
-          (_a = document.querySelectorAll(".subjectDet").item(index)) == null ? void 0 : _a.scrollIntoView({ behavior: "smooth" });
+          (_a = document.querySelectorAll(".subjectDet").item(index)) == null ? void 0 : _a.scrollIntoView({ behavior: "smooth", block: "center" });
         },
         icourse: (index) => {
           var _a;
-          (_a = document.querySelectorAll(".u-questionItem").item(index)) == null ? void 0 : _a.scrollIntoView({ behavior: "smooth" });
+          (_a = document.querySelectorAll(".u-questionItem,[class*=questionBody]").item(index)) == null ? void 0 : _a.scrollIntoView({ behavior: "smooth", block: "center" });
         }
       }
     },
@@ -7430,57 +7665,63 @@ ${content}</tr>
     }
   };
   const CommonProject = lib.Project.create({
-    name: "\u901A\u7528",
+    name: "通用",
     domains: [],
     scripts: {
       guide: new lib.Script({
-        name: "\u{1F3E0} \u811A\u672C\u9996\u9875",
-        matches: [["\u6240\u6709\u9875\u9762", /.*/]],
+        name: "🏠 使用教程",
+        matches: [["所有页面", /.*/]],
         namespace: "common.guide",
+        configs: {
+          notes: {
+            defaultValue: lib.$ui.notes([
+              "打开任意网课平台，进入视频、作业页面等待脚本运行，",
+              "任何疑问请查看上方交流群，进群后带截图进行反馈。",
+              "温馨提示: ",
+              "⚠️ 禁止与其他脚本一起使用，否则会不兼容导致无法运行！",
+              "⚠️ 禁止最小化浏览器、切屏，否则可能导致脚本无法运行！"
+            ]).outerHTML
+          }
+        },
         onrender({ panel }) {
           const guide = createGuide();
-          const contactUs = lib.h("button", { className: "base-style-button-secondary" }, "\u{1F5E8}\uFE0F\u4EA4\u6D41\u7FA4");
-          contactUs.onclick = () => window.open("https://docs.ocsjs.com/docs/about#\u4EA4\u6D41\u65B9\u5F0F", "_blank");
-          const changeLog = lib.h("button", { className: "base-style-button-secondary" }, "\u{1F4C4}\u67E5\u770B\u66F4\u65B0\u65E5\u5FD7");
-          changeLog.onclick = () => CommonProject.scripts.apps.methods.showChangelog();
-          changeLog.style.marginBottom = "12px";
           guide.style.width = "480px";
-          panel.body.replaceChildren(lib.h("div", { className: "card" }, [gotoHome(), contactUs, changeLog]), guide);
+          panel.body.replaceChildren(guide);
         }
       }),
       settings: new lib.Script({
-        name: "\u2699\uFE0F \u5168\u5C40\u8BBE\u7F6E",
-        matches: [["\u6240\u6709\u9875\u9762", /.*/]],
+        name: "⚙️ 全局设置",
+        matches: [["所有页面", /.*/]],
         namespace: "common.settings",
         configs: {
           notes: {
             defaultValue: lib.$ui.notes([
-              "\u2728\u9F20\u6807\u79FB\u52A8\u5230\u6309\u94AE\u6216\u8005\u8F93\u5165\u6846\uFF0C\u53EF\u4EE5\u770B\u5230\u63D0\u793A\uFF01",
-              "\u60F3\u8981\u81EA\u52A8\u7B54\u9898\u5FC5\u987B\u8BBE\u7F6E \u201C\u9898\u5E93\u914D\u7F6E\u201D ",
-              "\u8BBE\u7F6E\u540E\u8FDB\u5165\u7AE0\u8282\u6D4B\u8BD5\uFF0C\u4F5C\u4E1A\uFF0C\u8003\u8BD5\u9875\u9762\u5373\u53EF\u81EA\u52A8\u7B54\u9898\u3002"
+              "✨鼠标移动到按钮或者输入框，可以看到提示！",
+              "想要自动答题必须设置 “题库配置” ",
+              "设置后进入章节测试，作业，考试页面即可自动答题。"
             ]).outerHTML
           },
           answererWrappers: {
-            separator: "\u81EA\u52A8\u7B54\u9898\u8BBE\u7F6E",
+            separator: "自动答题设置",
             defaultValue: []
           },
           disabledAnswererWrapperNames: {
             defaultValue: []
           },
           answererWrappersButton: {
-            label: "\u9898\u5E93\u914D\u7F6E",
-            defaultValue: "\u70B9\u51FB\u914D\u7F6E",
+            label: "题库配置",
+            defaultValue: "点击配置",
             attrs: {
               type: "button"
             },
             onload() {
               const aws = CommonProject.scripts.settings.cfg.answererWrappers || [];
-              this.value = aws.length ? "\u5F53\u524D\u6709" + aws.length + "\u4E2A\u53EF\u7528\u9898\u5E93\uFF0C\u70B9\u51FB\u91CD\u65B0\u914D\u7F6E" : "\u70B9\u51FB\u914D\u7F6E";
+              this.value = aws.length ? "当前有" + aws.length + "个可用题库，点击重新配置" : "点击配置";
               this.onclick = () => {
                 const aw = CommonProject.scripts.settings.cfg.answererWrappers || [];
-                const copy = lib.$ui.copy("\u590D\u5236\u9898\u5E93\u914D\u7F6E", JSON.stringify(aw, null, 4));
+                const copy = lib.$ui.copy("复制题库配置", JSON.stringify(aw, null, 4));
                 const list = lib.h("div", [
-                  lib.h("div", aw.length ? ["\u4EE5\u4E0B\u662F\u5DF2\u7ECF\u89E3\u6790\u8FC7\u7684\u9898\u5E93\u914D\u7F6E\uFF1A", copy] : ""),
+                  lib.h("div", aw.length ? ["以下是已经解析过的题库配置：", copy] : ""),
                   ...createAnswererWrapperList(aw)
                 ]);
                 const textarea = lib.h(
@@ -7488,7 +7729,7 @@ ${content}</tr>
                   {
                     className: "modal-input",
                     style: { minHeight: "250px", width: "calc(100% - 20px)", maxWidth: "100%" },
-                    placeholder: aw.length ? "\u91CD\u65B0\u8F93\u5165\u9898\u5E93\u914D\u7F6E" : "\u8F93\u5165\u4F60\u7684\u9898\u5E93\u914D\u7F6E..."
+                    placeholder: aw.length ? "重新输入题库配置" : "输入你的题库配置..."
                   },
                   aw.length === 0 ? "" : JSON.stringify(aw, null, 4)
                 );
@@ -7500,11 +7741,11 @@ ${content}</tr>
                       style: { backgroundColor: "#eef2f7", borderRadius: "2px", padding: "2px 8px" }
                     },
                     [
-                      lib.h("option", "\u9ED8\u8BA4"),
+                      lib.h("option", "默认"),
                       lib.h(
                         "option",
                         {
-                          title: "\u5927\u5B66\u751F\u7F51\u8BFE\u9898\u5E93\u63A5\u53E3\u9002\u914D\u5668: \u5C06\u4E0D\u540C\u7684\u9898\u5E93\u6574\u5408\u4E3A\u4E00\u4E2AAPI\u63A5\u53E3\u3002\u8BE6\u7EC6\u67E5\u770B https://github.com/DokiDoki1103/tikuAdapter"
+                          title: "大学生网课题库接口适配器: 将不同的题库整合为一个API接口。详细查看 https://github.com/DokiDoki1103/tikuAdapter"
                         },
                         "TikuAdapter"
                       )
@@ -7517,14 +7758,14 @@ ${content}</tr>
                   content: lib.$ui.notes([
                     [
                       lib.h("div", [
-                        "\u9898\u5E93\u914D\u7F6E\u586B\u5199\u6559\u7A0B\uFF1A",
+                        "题库配置填写教程：",
                         lib.h("a", { href: "https://docs.ocsjs.com/docs/work" }, "https://docs.ocsjs.com/docs/work")
                       ])
                     ],
                     [
                       lib.h("div", [
-                        "\u26A0\uFE0F \u5982\u679C\u65E0\u6CD5\u7C98\u8D34\uFF0C\u8BF7\u70B9->\uFF1A",
-                        lib.h("button", "\u8BFB\u53D6\u526A\u8D34\u677F", (btn) => {
+                        "⚠️ 如果无法粘贴，请点->：",
+                        lib.h("button", "读取剪贴板", (btn) => {
                           btn.classList.add("base-style-button");
                           btn.onclick = () => {
                             navigator.clipboard.readText().then((result) => {
@@ -7532,64 +7773,64 @@ ${content}</tr>
                             });
                           };
                         }),
-                        "\uFF0C\u5E76\u540C\u610F\u6D4F\u89C8\u5668\u4E0A\u65B9\u7684\u526A\u8D34\u677F\u8BFB\u53D6\u7533\u8BF7\u3002"
+                        "，并同意浏览器上方的剪贴板读取申请。"
                       ])
                     ],
-                    ["\u26A0\uFE0F \u5982\u679C\u60F3\u6DFB\u52A0\u591A\u4E2A\u4E0D\u540C\u7684\u9898\u5E93\u914D\u7F6E\uFF0C\u8BF7\u5728\u6BCF\u4E2A\u914D\u7F6E\u4E4B\u95F4\u4F7F\u7528\u4E09\u4E2A\u4E95\u53F7\u9694\u5F00: ###\u3002"],
-                    ["\u26A0\uFE0F \u914D\u7F6E\u7B2C\u4E09\u65B9\u9898\u5E93\u51FA\u73B0\u7F51\u9875\u5F39\u7A97\u7684\uFF0C\u70B9\u51FB\u6C38\u4E45\u5141\u8BB8\u8FDE\u63A5\u3002"],
+                    ["⚠️ 如果想添加多个不同的题库配置，请在每个配置之间使用三个井号隔开: ###。"],
+                    ["⚠️ 配置第三方题库出现网页弹窗的，点击永久允许连接。"],
                     ...aw.length ? [list] : []
                   ]),
                   footer: lib.h("div", { style: { width: "100%" } }, [
                     textarea,
                     lib.h("div", { style: { display: "flex", flexWrap: "wrap", marginTop: "12px", fontSize: "12px" } }, [
-                      lib.h("div", ["\u89E3\u6790\u5668\uFF1A", select], (div) => {
+                      lib.h("div", ["解析器：", select], (div) => {
                         div.style.marginRight = "12px";
                         div.style.flex = "1";
                       }),
                       lib.h("div", { style: { flex: "1", display: "flex", flexWrap: "wrap", justifyContent: "end" } }, [
-                        lib.h("button", "\u6E05\u7A7A\u9898\u5E93\u914D\u7F6E", (btn) => {
+                        lib.h("button", "清空题库配置", (btn) => {
                           btn.className = "modal-cancel-button";
                           btn.style.marginRight = "48px";
                           btn.onclick = () => {
                             lib.$modal.confirm({
-                              content: "\u786E\u5B9A\u8981\u6E05\u7A7A\u9898\u5E93\u914D\u7F6E\u5417\uFF1F",
+                              content: "确定要清空题库配置吗？",
                               onConfirm: () => {
-                                lib.$message.success({ content: "\u5DF2\u6E05\u7A7A\uFF0C\u5728\u7B54\u9898\u524D\u8BF7\u8BB0\u5F97\u91CD\u65B0\u914D\u7F6E\u3002" });
+                                lib.$message.success({ content: "已清空，在答题前请记得重新配置。" });
                                 modal2 == null ? void 0 : modal2.remove();
                                 CommonProject.scripts.settings.cfg.answererWrappers = [];
-                                this.value = "\u70B9\u51FB\u914D\u7F6E";
+                                this.value = "点击配置";
                               }
                             });
                           };
                         }),
-                        lib.h("button", "\u5173\u95ED", (btn) => {
+                        lib.h("button", "关闭", (btn) => {
                           btn.className = "modal-cancel-button";
                           btn.style.marginRight = "12px";
                           btn.onclick = () => modal2 == null ? void 0 : modal2.remove();
                         }),
-                        lib.h("button", "\u4FDD\u5B58\u914D\u7F6E", (btn) => {
+                        lib.h("button", "保存配置", (btn) => {
                           btn.className = "modal-confirm-button";
                           btn.onclick = async () => {
                             const connects = lib.$gm.getMetadataFromScriptHead("connect");
                             const value = textarea.value;
                             if (!value) {
                               lib.$modal.alert({
-                                content: lib.h("div", "\u4E0D\u80FD\u4E3A\u7A7A\uFF01")
+                                content: lib.h("div", "不能为空！")
                               });
                               return;
                             }
                             if (value.includes("adapter-service/search") && select.value === "TikuAdapter" === false) {
                               lib.$modal.alert({
                                 content: lib.h("div", [
-                                  "\u68C0\u6D4B\u5230\u60A8\u53EF\u80FD\u6B63\u5728\u4F7F\u7528 ",
+                                  "检测到您可能正在使用 ",
                                   lib.h(
                                     "a",
                                     { href: "https://github.com/DokiDoki1103/tikuAdapter#readme" },
-                                    "TikuAdapter \u9898\u5E93"
+                                    "TikuAdapter 题库"
                                   ),
-                                  "\uFF0C\u4F46\u662F\u60A8\u9009\u62E9\u7684\u89E3\u6790\u5668\u4E0D\u662F TikuAdapter\uFF0C\u8BF7\u9009\u62E9 TikuAdapter \u89E3\u6790\u5668\uFF0C\u5E76\u586B\u5199\u63A5\u53E3\u5730\u5740\u5373\u53EF\uFF0C\u4F8B\u5982\uFF1Ahttp://localhost:8060/adapter-service/search\uFF0C\u6216\u8005\u5FFD\u7565\u6B64\u8B66\u544A\u3002"
+                                  "，但是您选择的解析器不是 TikuAdapter，请选择 TikuAdapter 解析器，并填写接口地址即可，例如：http://localhost:8060/adapter-service/search，或者忽略此警告。"
                                 ]),
-                                confirmButtonText: "\u5207\u6362\u81F3 TikuAdapter \u89E3\u6790\u5668\uFF0C\u5E76\u8BC6\u522B\u63A5\u53E3\u5730\u5740",
+                                confirmButtonText: "切换至 TikuAdapter 解析器，并识别接口地址",
                                 onConfirm() {
                                   var _a;
                                   const origin = ((_a = textarea.value.match(/http:\/\/(.+)\/adapter-service\/search/)) == null ? void 0 : _a[1]) || "";
@@ -7605,7 +7846,7 @@ ${content}</tr>
                                 if (value.startsWith("http") === false) {
                                   lib.$modal.alert({
                                     content: lib.h("div", [
-                                      "\u683C\u5F0F\u9519\u8BEF\uFF0CTikuAdapter\u89E3\u6790\u5668\u53EA\u80FD\u89E3\u6790 url \u94FE\u63A5\uFF0C\u8BF7\u91CD\u65B0\u8F93\u5165\uFF01\u6216\u8005\u67E5\u770B\uFF1A",
+                                      "格式错误，TikuAdapter解析器只能解析 url 链接，请重新输入！或者查看：",
                                       lib.h(
                                         "a",
                                         { href: "https://github.com/DokiDoki1103/tikuAdapter#readme" },
@@ -7615,9 +7856,9 @@ ${content}</tr>
                                   });
                                   return;
                                 }
-                                select.value = "\u9ED8\u8BA4";
+                                select.value = "默认";
                                 awsResult.push({
-                                  name: "TikuAdapter\u9898\u5E93",
+                                  name: "TikuAdapter题库",
                                   url: value,
                                   homepage: "https://github.com/DokiDoki1103/tikuAdapter",
                                   method: "post",
@@ -7642,7 +7883,7 @@ ${content}</tr>
                                 }
                               }
                               if (awsResult.length === 0) {
-                                lib.$modal.alert({ content: "\u9898\u5E93\u914D\u7F6E\u4E0D\u80FD\u4E3A\u7A7A\uFF0C\u8BF7\u91CD\u65B0\u914D\u7F6E\u3002" });
+                                lib.$modal.alert({ content: "题库配置不能为空，请重新配置。" });
                                 return;
                               }
                               const result_set = [];
@@ -7654,21 +7895,21 @@ ${content}</tr>
                               }
                               awsResult = result_set;
                               if (JSON.stringify(CommonProject.scripts.settings.cfg.answererWrappers) === JSON.stringify(awsResult)) {
-                                lib.$modal.alert({ content: lib.h("div", ["\u9898\u5E93\u914D\u7F6E\u6CA1\u6709\u53D8\u5316\uFF0C\u8BF7\u91CD\u65B0\u914D\u7F6E\uFF01"]) });
+                                lib.$modal.alert({ content: lib.h("div", ["题库配置没有变化，请重新配置！"]) });
                                 return;
                               }
                               CommonProject.scripts.settings.cfg.answererWrappers = awsResult;
-                              this.value = "\u5F53\u524D\u6709" + awsResult.length + "\u4E2A\u53EF\u7528\u9898\u5E93";
+                              this.value = "当前有" + awsResult.length + "个可用题库";
                               lib.$modal.confirm({
                                 width: 600,
                                 content: lib.h("div", [
                                   lib.h("div", [
-                                    "\u{1F389} \u914D\u7F6E\u6210\u529F\uFF0C",
-                                    lib.h("b", " \u5237\u65B0\u7F51\u9875\u540E "),
-                                    "\u91CD\u65B0\u8FDB\u5165",
-                                    lib.h("b", " \u7B54\u9898\u9875\u9762 "),
-                                    "\u5373\u53EF\u3002",
-                                    "\u89E3\u6790\u5230\u7684\u9898\u5E93\u5982\u4E0B\u6240\u793A:"
+                                    "🎉 配置成功，",
+                                    lib.h("b", " 刷新网页后 "),
+                                    "重新进入",
+                                    lib.h("b", " 答题页面 "),
+                                    "即可。",
+                                    "解析到的题库如下所示:"
                                   ]),
                                   ...createAnswererWrapperList(awsResult)
                                 ]),
@@ -7678,8 +7919,8 @@ ${content}</tr>
                                   }
                                 },
                                 ...lib.$gm.isInGMContext() ? {
-                                  confirmButtonText: "\u7ACB\u5373\u5237\u65B0",
-                                  cancelButtonText: "\u7A0D\u540E\u5237\u65B0"
+                                  confirmButtonText: "立即刷新",
+                                  cancelButtonText: "稍后刷新"
                                 } : {}
                               });
                               textarea.value = JSON.stringify(awsResult, null, 4);
@@ -7697,18 +7938,18 @@ ${content}</tr>
                                   lib.$modal.alert({
                                     width: 600,
                                     maskCloseable: false,
-                                    title: "\u26A0\uFE0F\u8B66\u544A",
+                                    title: "⚠️警告",
                                     content: lib.h("div", [
                                       lib.h("div", [
-                                        "\u914D\u7F6E\u6210\u529F\uFF0C\u4F46\u68C0\u6D4B\u5230\u4EE5\u4E0B \u57DF\u540D/ip \u4E0D\u5728\u811A\u672C\u7684\u767D\u540D\u5355\u4E2D\uFF0C\u8BF7\u5B89\u88C5 : ",
+                                        "配置成功，但检测到以下 域名/ip 不在脚本的白名单中，请安装 : ",
                                         lib.h(
                                           "a",
                                           {
-                                            href: "https://docs.ocsjs.com/docs/other/api#\u5168\u57DF\u540D\u901A\u7528\u7248\u672C"
+                                            href: "https://docs.ocsjs.com/docs/other/api#全域名通用版本"
                                           },
-                                          "OCS\u5168\u57DF\u540D\u901A\u7528\u7248\u672C"
+                                          "OCS全域名通用版本"
                                         ),
-                                        "\uFF0C\u6216\u8005\u624B\u52A8\u6DFB\u52A0 @connect \uFF0C\u5426\u5219\u65E0\u6CD5\u8FDB\u884C\u8BF7\u6C42\u3002",
+                                        "，或者手动添加 @connect ，否则无法进行请求。",
                                         lib.h(
                                           "ul",
                                           notAllowed.map((url) => lib.h("li", new URL(url).hostname))
@@ -7720,7 +7961,7 @@ ${content}</tr>
                               }
                             } catch (e) {
                               lib.$modal.alert({
-                                content: lib.h("div", [lib.h("div", "\u89E3\u6790\u5931\u8D25\uFF0C\u539F\u56E0\u5982\u4E0B :"), lib.h("div", e.message)])
+                                content: lib.h("div", [lib.h("div", "解析失败，原因如下 :"), lib.h("div", e.message)])
                               });
                             }
                           };
@@ -7733,60 +7974,60 @@ ${content}</tr>
             }
           },
           upload: {
-            label: "\u7B54\u9898\u5B8C\u6210\u540E",
+            label: "答题完成后",
             tag: "select",
             defaultValue: 80,
             options: [
-              ["save", "\u81EA\u52A8\u4FDD\u5B58", "\u5B8C\u6210\u540E\u81EA\u52A8\u4FDD\u5B58\u7B54\u6848, \u6CE8\u610F\u5982\u679C\u4F60\u5F00\u542F\u4E86\u968F\u673A\u4F5C\u7B54, \u6709\u53EF\u80FD\u5206\u8FA8\u4E0D\u51FA\u7B54\u6848\u662F\u5426\u6B63\u786E\u3002"],
-              ["nomove", "\u4E0D\u4FDD\u5B58\u4E5F\u4E0D\u63D0\u4EA4", "\u7B49\u5F85\u65F6\u95F4\u8FC7\u540E\u5C06\u4F1A\u81EA\u52A8\u4E0B\u4E00\u8282, \u9002\u5408\u5728\u6D4B\u8BD5\u811A\u672C\u65F6\u4F7F\u7528\u3002"],
+              ["save", "自动保存", "完成后自动保存答案, 注意如果你开启了随机作答, 有可能分辨不出答案是否正确。"],
+              ["nomove", "不保存也不提交", "等待时间过后将会自动下一节, 适合在测试脚本时使用。"],
               ...[10, 20, 30, 40, 50, 60, 70, 80, 90].map((rate) => [
                 rate,
-                `\u641C\u5230${rate}%\u7684\u9898\u76EE\u5219\u81EA\u52A8\u63D0\u4EA4`,
-                `\u4F8B\u5982: 100\u9898\u4E2D\u67E5\u8BE2\u5230 ${rate} \u9898\u7684\u7B54\u6848,\uFF08\u7B54\u6848\u4E0D\u4E00\u5B9A\u6B63\u786E\uFF09, \u5219\u4F1A\u81EA\u52A8\u63D0\u4EA4\u3002`
+                `搜到${rate}%的题目则自动提交`,
+                `例如: 100题中查询到 ${rate} 题的答案,（答案不一定正确）, 则会自动提交。`
               ]),
-              ["100", "\u6BCF\u4E2A\u9898\u76EE\u90FD\u67E5\u5230\u7B54\u6848\u624D\u81EA\u52A8\u63D0\u4EA4", "\u7B54\u6848\u4E0D\u4E00\u5B9A\u6B63\u786E"],
-              ["force", "\u5F3A\u5236\u81EA\u52A8\u63D0\u4EA4", "\u4E0D\u7BA1\u7B54\u6848\u662F\u5426\u6B63\u786E\u76F4\u63A5\u5F3A\u5236\u81EA\u52A8\u63D0\u4EA4\uFF0C\u5982\u9700\u5F00\u542F\uFF0C\u8BF7\u914D\u5408\u968F\u673A\u4F5C\u7B54\u8C28\u614E\u4F7F\u7528\u3002"]
+              ["100", "每个题目都查到答案才自动提交", "答案不一定正确"],
+              ["force", "强制自动提交", "不管答案是否正确直接强制自动提交，如需开启，请配合随机作答谨慎使用。"]
             ],
             attrs: {
-              title: "\u81EA\u52A8\u7B54\u9898\u5B8C\u6210\u540E\u7684\u8BBE\u7F6E\uFF0C\u76EE\u524D\u4EC5\u5728 \u8D85\u661F\u5B66\u4E60\u901A\u7684\u7AE0\u8282\u6D4B\u8BD5 \u4E2D\u751F\u6548, \u9F20\u6807\u60AC\u6D6E\u5728\u9009\u9879\u4E0A\u53EF\u4EE5\u67E5\u770B\u6BCF\u4E2A\u9009\u9879\u7684\u5177\u4F53\u89E3\u91CA\u3002"
+              title: "自动答题完成后的设置，目前仅在 超星学习通的章节测试 中生效, 鼠标悬浮在选项上可以查看每个选项的具体解释。"
             }
           },
           thread: {
-            label: "\u7EBF\u7A0B\u6570\u91CF\uFF08\u4E2A\uFF09",
+            label: "线程数量（个）",
             attrs: {
               type: "number",
               min: 1,
               step: 1,
               max: 3,
-              title: "\u540C\u4E00\u65F6\u95F4\u5185\u7B54\u9898\u7EBF\u7A0B\u5DE5\u4F5C\u7684\u6570\u91CF\uFF08\u4F8B\u5B50\uFF1A\u4E09\u4E2A\u7EBF\u7A0B\u5219\u4EE3\u8868\u4E00\u79D2\u5185\u540C\u65F6\u641C\u7D22\u4E09\u9053\u9898\uFF09\uFF0C\u8FC7\u591A\u53EF\u80FD\u5BFC\u81F4\u9898\u5E93\u670D\u52A1\u5668\u538B\u529B\u8FC7\u5927\uFF0C\u8BF7\u9002\u5F53\u8C03\u4F4E\u3002"
+              title: "同一时间内答题线程工作的数量（例子：三个线程则代表一秒内同时搜索三道题），过多可能导致题库服务器压力过大，请适当调低。"
             },
             defaultValue: 1
           },
           "work-when-no-job": {
             defaultValue: false,
-            label: "(\u4EC5\u8D85\u661F)\u5F3A\u5236\u7B54\u9898",
+            label: "(仅超星)强制答题",
             attrs: {
               type: "checkbox",
-              title: "\u5F53\u7AE0\u8282\u6D4B\u8BD5\u5DE6\u4E0A\u89D2\u5E76\u6CA1\u6709\u9EC4\u8272\u4EFB\u52A1\u70B9\u7684\u65F6\u5019\u4F9D\u7136\u8FDB\u884C\u7B54\u9898\uFF08\u6CA1\u6709\u4EFB\u52A1\u70B9\u8BF4\u660E\u6B64\u4F5C\u4E1A\u53EF\u80FD\u4E0D\u8BA1\u5165\u603B\u6210\u7EE9\uFF0C\u5982\u679C\u8001\u5E08\u8981\u6C42\u5219\u53EF\u4EE5\u5F00\u542F\uFF09"
+              title: "当章节测试左上角并没有黄色任务点的时候依然进行答题（没有任务点说明此作业可能不计入总成绩，如果老师要求则可以开启）"
             }
           },
           "randomWork-choice": {
             defaultValue: false,
-            label: "(\u4EC5\u8D85\u661F)\u968F\u673A\u9009\u62E9",
-            attrs: { type: "checkbox", title: "\u9898\u5E93\u641C\u7D22\u4E0D\u5230\u7B54\u6848\u65F6\uFF0C\u968F\u673A\u9009\u62E9\u4EFB\u610F\u4E00\u4E2A\u9009\u9879" }
+            label: "(仅超星)随机选择",
+            attrs: { type: "checkbox", title: "题库搜索不到答案时，随机选择任意一个选项" }
           },
           "randomWork-complete": {
             defaultValue: false,
-            label: "(\u4EC5\u8D85\u661F)\u968F\u673A\u586B\u7A7A",
-            attrs: { type: "checkbox", title: "\u9898\u5E93\u641C\u7D22\u4E0D\u5230\u7B54\u6848\u65F6\uFF0C\u968F\u673A\u586B\u5199\u4EE5\u4E0B\u4EFB\u610F\u4E00\u4E2A\u6587\u6848" }
+            label: "(仅超星)随机填空",
+            attrs: { type: "checkbox", title: "题库搜索不到答案时，随机填写以下任意一个文案" }
           },
           "randomWork-completeTexts-textarea": {
             elementClassName: "config-details",
-            defaultValue: ["\u4E0D\u4F1A", "\u4E0D\u77E5\u9053", "\u4E0D\u6E05\u695A", "\u4E0D\u61C2", "\u4E0D\u4F1A\u5199"].join("\n"),
-            label: "(\u4EC5\u8D85\u661F)\u968F\u673A\u586B\u7A7A\u6587\u6848",
+            defaultValue: ["不会", "不知道", "不清楚", "不懂", "不会写"].join("\n"),
+            label: "(仅超星)随机填空文案",
             tag: "textarea",
             showIf: "common.settings.randomWork-complete",
-            attrs: { title: "\u6BCF\u884C\u4E00\u4E2A\uFF0C\u968F\u673A\u586B\u5165", style: { minWidth: "200px", minHeight: "50px" } },
+            attrs: { title: "每行一个，随机填入", style: { minWidth: "200px", minHeight: "50px" } },
             onload(el) {
               el.addEventListener("change", () => {
                 if (String(el.value).trim() === "") {
@@ -7797,43 +8038,43 @@ ${content}</tr>
           },
           advancedSettings: {
             defaultValue: false,
-            label: "\u9AD8\u7EA7\u8BBE\u7F6E",
-            attrs: { type: "checkbox", title: "\u8BF7\u8C28\u614E\u4F7F\u7528\u9AD8\u7EA7\u8BBE\u7F6E\uFF0C\u53EF\u80FD\u4F1A\u5F71\u54CD\u7B54\u9898\u6548\u679C\uFF0C\u5C0F\u767D\u5728\u672A\u7406\u89E3\u7684\u60C5\u51B5\u4E0B\u8C28\u614E\u8C03\u6574\u3002" }
+            label: "高级设置",
+            attrs: { type: "checkbox", title: "请谨慎使用高级设置，可能会影响答题效果，小白在未理解的情况下谨慎调整。" }
           },
           stopSecondWhenFinish: {
             showIf: "common.settings.advancedSettings",
             elementClassName: "config-details",
-            label: "\u7B54\u9898\u7ED3\u675F\u540E\u6682\u505C\uFF08\u79D2\uFF09",
+            label: "答题结束后暂停（秒）",
             attrs: {
               type: "number",
               min: 3,
               step: 1,
               max: 9999,
-              title: "\u81EA\u52A8\u7B54\u9898\u811A\u672C\u7ED3\u675F\u540E\u6682\u505C\u7684\u65F6\u95F4\uFF08\u65B9\u4FBF\u67E5\u770B\u548C\u68C0\u67E5\uFF09\u3002"
+              title: "自动答题脚本结束后暂停的时间（方便查看和检查）。"
             },
             defaultValue: 3
           },
           period: {
             showIf: "common.settings.advancedSettings",
             elementClassName: "config-details",
-            label: "\u641C\u9898\u95F4\u9694\uFF08\u79D2\uFF09",
+            label: "搜题间隔（秒）",
             attrs: {
               type: "number",
               min: 1,
               step: 1,
               max: 60,
-              title: "\u6BCF\u9053\u9898\u7684\u641C\u9898\u95F4\u9694\u65F6\u95F4\uFF0C\u4E0D\u5EFA\u8BAE\u592A\u4F4E\uFF0C\u907F\u514D\u589E\u52A0\u670D\u52A1\u5668\u538B\u529B\u3002"
+              title: "每道题的搜题间隔时间，不建议太低，避免增加服务器压力。"
             },
             defaultValue: 3
           },
           answerSeparators: {
             showIf: "common.settings.advancedSettings",
             elementClassName: "config-details",
-            label: "\u7B54\u6848\u5206\u9694\u7B26",
+            label: "答案分隔符",
             attrs: {
-              title: "\u5206\u9694\u7B54\u6848\u7684\u7B26\u53F7\uFF0C\u4F8B\u5982\uFF1A\u7B54\u68481#\u7B54\u68482#\u7B54\u68483\uFF0C\u5206\u9694\u7B26\u4E3A #\uFF0C \u4F7F\u7528\u82F1\u6587\u9017\u53F7\u8FDB\u884C\u9694\u5F00 : ',' "
+              title: "分隔答案的符号，例如：答案1#答案2#答案3，分隔符为 #， 使用英文逗号进行隔开 : ',' "
             },
-            defaultValue: ["===", "#", "---", "###", "|", ";", "\uFF1B"].join(","),
+            defaultValue: ["===", "#", "---", "###", "|", ";", "；"].join(","),
             onload(el) {
               el.addEventListener("change", () => {
                 if (String(el.value).trim() === "") {
@@ -7845,55 +8086,55 @@ ${content}</tr>
           answerMatchMode: {
             showIf: "common.settings.advancedSettings",
             elementClassName: "config-details",
-            label: "\u7B54\u6848\u5339\u914D\u6A21\u5F0F",
+            label: "答案匹配模式",
             tag: "select",
             defaultValue: "similar",
             options: [
-              ["similar", "\u76F8\u4F3C\u5339\u914D", "\u7B54\u6848\u76F8\u4F3C\u5EA6\u8FBE\u523060%\u4EE5\u4E0A\u5C31\u5339\u914D"],
-              ["exact", "\u7CBE\u786E\u5339\u914D", "\u7B54\u6848\u5FC5\u987B\u5B8C\u5168\u4E00\u81F4\u624D\u5339\u914D"]
+              ["similar", "相似匹配", "答案相似度达到60%以上就匹配"],
+              ["exact", "精确匹配", "答案必须完全一致才匹配"]
             ]
           },
           answerWrapperHandlerTimeout: {
             showIf: "common.settings.advancedSettings",
             elementClassName: "config-details",
-            label: "\u641C\u9898\u6700\u5927\u8017\u65F6\uFF08\u79D2\uFF09",
+            label: "搜题最大耗时（秒）",
             attrs: {
               type: "number",
               min: 10,
               step: 1,
-              max: 60,
-              title: "\u641C\u9898\u8D85\u65F6\u65F6\u95F4\uFF0C\u5355\u4F4D\u4E3A\u79D2\uFF0C\u8D85\u8FC7\u8FD9\u4E2A\u65F6\u95F4\u76F4\u63A5\u653E\u5F03\uFF0C\u8FDB\u884C\u4E0B\u4E00\u9898\u641C\u7D22\u3002"
+              max: 3 * 60,
+              title: "搜题超时时间，单位为秒，超过这个时间直接放弃，进行下一题搜索。"
             },
-            defaultValue: 60
+            defaultValue: 120
           },
           redundanceWordsText: {
             showIf: "common.settings.advancedSettings",
             elementClassName: "config-details",
             defaultValue: [
-              "\u5355\u9009\u9898(\u5FC5\u8003)",
-              "\u586B\u7A7A\u9898(\u5FC5\u8003)",
-              "\u591A\u9009\u9898(\u5FC5\u8003)",
-              "(\u5355\u9009\u9898)",
-              "(\u591A\u9009\u9898)",
-              "(\u5224\u65AD\u9898)",
-              "(\u586B\u7A7A\u9898)",
-              "\u3010\u5355\u9009\u9898\u3011",
-              "\u3010\u591A\u9009\u9898\u3011",
-              "\u3010\u586B\u7A7A\u9898\u3011",
-              "\u3010\u5224\u65AD\u9898\u3011",
-              "\u3010\u55AE\u9078\u9898\u3011",
-              "\u3010\u591A\u9078\u9898\u3011",
-              "\u3010\u5224\u65B7\u9898\u3011",
-              "\u3010Single Choice\u3011",
-              "\u3010Multiple Choice\u3011",
-              "\u3010single choice\u3011",
-              "\u3010multiple choice\u3011",
-              "\u3010True or False\u3011"
+              "单选题(必考)",
+              "填空题(必考)",
+              "多选题(必考)",
+              "(单选题)",
+              "(多选题)",
+              "(判断题)",
+              "(填空题)",
+              "【单选题】",
+              "【多选题】",
+              "【填空题】",
+              "【判断题】",
+              "【單選题】",
+              "【多選题】",
+              "【判斷题】",
+              "【Single Choice】",
+              "【Multiple Choice】",
+              "【single choice】",
+              "【multiple choice】",
+              "【True or False】"
             ].join("\n"),
-            label: "\u9898\u76EE\u5197\u4F59\u5B57\u6BB5\u81EA\u52A8\u5220\u9664",
+            label: "题目冗余字段自动删除",
             tag: "textarea",
             attrs: {
-              title: "\u5728\u641C\u9898\u7684\u65F6\u5019\u81EA\u52A8\u5220\u9664\u591A\u4F59\u7684\u6587\u5B57\uFF0C\u4EE5\u4FBF\u63D0\u9AD8\u641C\u9898\u7684\u51C6\u786E\u5EA6\uFF0C\u6BCF\u884C\u4E00\u4E2A\u3002",
+              title: "在搜题的时候自动删除多余的文字，以便提高搜题的准确度，每行一个。",
               style: { minWidth: "200px", minHeight: "50px" }
             },
             onload(el) {
@@ -7905,32 +8146,32 @@ ${content}</tr>
             }
           },
           notification: {
-            separator: "\u5176\u4ED6\u8BBE\u7F6E",
-            label: "\u7CFB\u7EDF\u901A\u77E5",
+            separator: "其他设置",
+            label: "系统通知",
             attrs: {
-              title: "\u5141\u8BB8\u811A\u672C\u53D1\u9001\u7CFB\u7EDF\u901A\u77E5\uFF0C\u53EA\u6709\u91CD\u8981\u4E8B\u60C5\u53D1\u751F\u65F6\u4F1A\u53D1\u9001\u7CFB\u7EDF\u901A\u77E5\uFF0C\u5C3D\u91CF\u907F\u514D\u7528\u6237\u53D7\u5230\u9A9A\u6270\uFF08\u5728\u7535\u8111\u5C4F\u5E55\u53F3\u4FA7\u663E\u793A\u901A\u77E5\u5F39\u7A97\uFF0C\u4F8B\u5982\u811A\u672C\u6267\u884C\u5B8C\u6BD5\uFF0C\u56FE\u5F62\u9A8C\u8BC1\u7801\uFF0C\u7248\u672C\u66F4\u65B0\u7B49\u901A\u77E5\uFF09\u3002"
+              title: "允许脚本发送系统通知，只有重要事情发生时会发送系统通知，尽量避免用户受到骚扰（在电脑屏幕右侧显示通知弹窗，例如脚本执行完毕，图形验证码，版本更新等通知）。"
             },
             tag: "select",
             defaultValue: "only-notify",
             options: [
-              ["only-notify", "\u53EA\u663E\u793A\u53F3\u4E0B\u89D2\u901A\u77E5"],
-              ["notify-and-voice", "\u901A\u77E5\u4EE5\u53CA\u63D0\u793A\u97F3\uFF08\u53EE\u7684\u4E00\u58F0\uFF09"],
-              ["all", "\u901A\u77E5\uFF0C\u63D0\u793A\u97F3\uFF0C\u4EE5\u53CA\u4EFB\u52A1\u680F\u95EA\u70C1\u63D0\u793A"],
-              ["no-notify", "\u5173\u95ED\u7CFB\u7EDF\u901A\u77E5"]
+              ["only-notify", "只显示右下角通知"],
+              ["notify-and-voice", "通知以及提示音（叮的一声）"],
+              ["all", "通知，提示音，以及任务栏闪烁提示"],
+              ["no-notify", "关闭系统通知"]
             ]
           },
           notificationWebhooks: {
-            label: "\u901A\u77E5\u56DE\u8C03",
+            label: "通知回调",
             attrs: {
-              title: "\u53D1\u9001\u7CFB\u7EDF\u901A\u77E5\u65F6\u53D1\u9001\u56DE\u8C03\u8BF7\u6C42\uFF0C\u7528\u4E8E\u4E13\u4E1A\u5F00\u53D1\u4EBA\u5458\u5BF9\u63A5\u5176\u4ED6\u901A\u77E5\u7CFB\u7EDF\u3002\uFF08\u6BCF\u884C\u586B\u5199\u4E00\u4E2AURL\uFF0C\u987A\u5E8F\u53D1\u9001GET\u8BF7\u6C42\uFF0C${message} \u4E3A\u6D88\u606F\u5360\u4F4D\u7B26\uFF0C\u53EF\u7528\u4E8E\u6D88\u606F\u53D8\u91CF\u66FF\u6362\uFF09"
+              title: "发送系统通知时发送回调请求，用于专业开发人员对接其他通知系统。（每行填写一个URL，顺序发送GET请求，${message} 为消息占位符，可用于消息变量替换）"
             },
             tag: "textarea",
             defaultValue: ""
           },
           enableQuestionCaches: {
-            label: "\u9898\u5E93\u7F13\u5B58\u529F\u80FD",
+            label: "题库缓存功能",
             defaultValue: true,
-            attrs: { type: "checkbox", title: "\u8BE6\u60C5\u8BF7\u524D\u5F80 \u901A\u7528-\u5176\u4ED6\u5E94\u7528-\u9898\u5E93\u62D3\u5C55\u67E5\u770B\u3002" }
+            attrs: { type: "checkbox", title: "详情请前往 通用-其他应用-题库拓展查看。" }
           }
         },
         methods() {
@@ -7951,7 +8192,7 @@ ${content}</tr>
                   important: this.cfg.notification === "all",
                   silent: this.cfg.notification === "only-notify"
                 });
-                const message2 = ((opts == null ? void 0 : opts.extraTitle) ? (opts == null ? void 0 : opts.extraTitle) + "\uFF1A" : "") + content;
+                const message2 = ((opts == null ? void 0 : opts.extraTitle) ? (opts == null ? void 0 : opts.extraTitle) + "：" : "") + content;
                 const webhooks = this.cfg.notificationWebhooks.split("\n").map((i) => i.trim()).filter(Boolean);
                 for (const webhook of webhooks) {
                   let resolved_webhook = webhook;
@@ -7960,9 +8201,9 @@ ${content}</tr>
                     method: "get",
                     type: "GM_xmlhttpRequest"
                   }).then((result) => {
-                    console.debug("\u901A\u77E5\u56DE\u8C03\u6210\u529F", { webhook: resolved_webhook, result });
+                    console.debug("通知回调成功", { webhook: resolved_webhook, result });
                   }).catch((err) => {
-                    console.debug("\u901A\u77E5\u56DE\u8C03\u5931\u8D25", { webhook: resolved_webhook, err });
+                    console.debug("通知回调失败", { webhook: resolved_webhook, err });
                   });
                 }
               }
@@ -7981,15 +8222,15 @@ ${content}</tr>
             const testNotification = lib.h(
               "button",
               { className: "base-style-button", disabled: this.cfg.answererWrappers.length === 0 },
-              "\u{1F4E2}\u6D4B\u8BD5\u7CFB\u7EDF\u901A\u77E5"
+              "📢测试系统通知"
             );
             testNotification.onclick = () => {
-              this.methods.notificationBySetting("\u8FD9\u662F\u4E00\u6761\u6D4B\u8BD5\u901A\u77E5");
+              this.methods.notificationBySetting("这是一条测试通知");
             };
             const refresh = lib.h(
               "button",
               { className: "base-style-button", disabled: this.cfg.answererWrappers.length === 0 },
-              "\u{1F504}\uFE0F\u5237\u65B0\u9898\u5E93\u72B6\u6001"
+              "🔄️刷新题库状态"
             );
             refresh.onclick = () => {
               updateState();
@@ -8004,7 +8245,7 @@ ${content}</tr>
               if (this.cfg.answererWrappers.length) {
                 refresh.style.display = "block";
                 tableContainer.style.display = "block";
-                refresh.textContent = "\u{1F6AB}\u6B63\u5728\u52A0\u8F7D\u9898\u5E93\u72B6\u6001...";
+                refresh.textContent = "🚫正在加载题库状态...";
                 refresh.setAttribute("disabled", "true");
                 const table = lib.h("table");
                 table.style.width = "100%";
@@ -8043,18 +8284,18 @@ ${content}</tr>
                       lib.$ui.tooltip(
                         lib.h(
                           "span",
-                          { title: isDisabled ? "\u9898\u76EE\u5DF2\u7ECF\u88AB\u505C\u7528\uFF0C\u8BF7\u5728\u4E0A\u65B9\u9898\u5E93\u914D\u7F6E\u4E2D\u70B9\u51FB\u5F00\u542F\u3002" : "" },
-                          success ? "\u8FDE\u63A5\u6210\u529F\u{1F7E2}" : isDisabled ? "\u5DF2\u505C\u7528\u26AA" : error ? "\u8FDE\u63A5\u5931\u8D25\u{1F534}" : "\u8FDE\u63A5\u8D85\u65F6\u{1F7E1}"
+                          { title: isDisabled ? "题目已经被停用，请在上方题库配置中点击开启。" : "" },
+                          success ? "连接成功🟢" : isDisabled ? "已停用⚪" : error ? "连接失败🔴" : "连接超时🟡"
                         )
                       )
                     ])
                   );
-                  body.append(lib.h("td", `\u5EF6\u8FDF : ${success ? Date.now() - t2 : "---"}/ms`));
+                  body.append(lib.h("td", `延迟 : ${success ? Date.now() - t2 : "---"}/ms`));
                   table.append(body);
                   loadedCount++;
                   if (loadedCount === this.cfg.answererWrappers.length) {
                     setTimeout(() => {
-                      refresh.textContent = "\u{1F504}\uFE0F\u5237\u65B0\u9898\u5E93\u72B6\u6001";
+                      refresh.textContent = "🔄️刷新题库状态";
                       refresh.removeAttribute("disabled");
                     }, 2e3);
                   }
@@ -8076,22 +8317,22 @@ ${content}</tr>
         }
       }),
       workResults: new lib.Script({
-        name: "\u{1F30F} \u641C\u7D22\u7ED3\u679C",
-        matches: [["\u6240\u6709\u9875\u9762", /.*/]],
+        name: "🔎 搜索结果",
+        matches: [["所有页面", /.*/]],
         namespace: "common.work-results",
         configs: {
           notes: {
-            defaultValue: lib.$ui.notes(["\u70B9\u51FB\u9898\u76EE\u5E8F\u53F7\uFF0C\u67E5\u770B\u641C\u7D22\u7ED3\u679C", "\u6BCF\u6B21\u81EA\u52A8\u7B54\u9898\u5F00\u59CB\u524D\uFF0C\u90FD\u4F1A\u6E05\u7A7A\u4E0A\u4E00\u6B21\u7684\u641C\u7D22\u7ED3\u679C\u3002"]).outerHTML
+            defaultValue: lib.$ui.notes(["点击题目序号，查看搜索结果", "如果没有搜到，可能是题库没有收录该题目答案"]).outerHTML
           },
           type: {
-            label: "\u663E\u793A\u7C7B\u578B",
+            label: "显示类型",
             tag: "select",
             options: [
-              ["numbers", "\u5E8F\u53F7\u5217\u8868"],
-              ["questions", "\u9898\u76EE\u5217\u8868"]
+              ["numbers", "序号列表"],
+              ["questions", "题目列表"]
             ],
             attrs: {
-              title: "\u4F7F\u7528\u9898\u76EE\u5217\u8868\u53EF\u80FD\u4F1A\u9020\u6210\u9875\u9762\u5361\u987F\u3002"
+              title: "使用题目列表可能会造成页面卡顿。"
             },
             defaultValue: "numbers"
           },
@@ -8137,6 +8378,11 @@ ${content}</tr>
             setResults(results) {
               return lib.$store.setTab(TAB_WORK_RESULTS_KEY, results);
             },
+            async appendResults(results) {
+              const data = await lib.$store.getTab(TAB_WORK_RESULTS_KEY) || [];
+              data.push(...results);
+              return lib.$store.setTab(TAB_WORK_RESULTS_KEY, data);
+            },
             init(opts) {
               CommonProject.scripts.workResults.cfg.questionPositionSyncHandlerType = opts == null ? void 0 : opts.questionPositionSyncHandlerType;
               CommonProject.scripts.workResults.methods.refreshState();
@@ -8144,8 +8390,9 @@ ${content}</tr>
             },
             createWorkResultsPanel: (mount2) => {
               const container2 = mount2 || lib.h("div");
+              container2.style.width = "400px";
               let scrollPercent = 0;
-              const list = lib.h("div");
+              const list = lib.h("div", { className: "work-result-list" });
               let mouseoverIndex = -1;
               list.onscroll = () => {
                 scrollPercent = list.scrollTop / list.scrollHeight;
@@ -8173,13 +8420,10 @@ ${content}</tr>
                     this.cfg.currentResultIndex = 0;
                   }
                   if (this.cfg.type === "numbers") {
-                    const resultContainer = lib.h("div", {}, (res) => {
-                      res.style.width = "400px";
-                    });
-                    list.style.width = "400px";
+                    const resultContainer = lib.h("div", { className: "work-result-container" });
                     list.style.marginBottom = "12px";
                     list.style.overflow = "auto";
-                    list.style.maxHeight = "200px";
+                    list.style.maxHeight = "300px";
                     const nums = results.map((result, index) => {
                       return lib.h("span", { className: "search-infos-num", innerText: (index + 1).toString() }, (num) => {
                         setNumStyle(result, num, index);
@@ -8204,7 +8448,6 @@ ${content}</tr>
                     resultContainer.replaceChildren(createResult(results[this.cfg.currentResultIndex]));
                     container2.replaceChildren(list, resultContainer);
                   } else {
-                    list.style.width = "400px";
                     list.style.overflow = "auto";
                     list.style.maxHeight = window.innerHeight / 2 + "px";
                     const resultContainer = lib.h("div", { className: "work-result-question-container" });
@@ -8271,9 +8514,12 @@ ${content}</tr>
                   }
                 } else {
                   container2.replaceChildren(
-                    lib.h("div", "\u26A0\uFE0F\u6682\u65E0\u4EFB\u4F55\u641C\u7D22\u7ED3\u679C", (div) => {
-                      div.style.textAlign = "center";
-                    })
+                    lib.h("div", { className: "alert-info-wrapper" }, [
+                      lib.h("div", "暂无任何搜索结果~", (div) => {
+                        div.style.marginTop = "12px";
+                        div.className = "result-info no-answer";
+                      })
+                    ])
                   );
                 }
                 list.scrollTo({
@@ -8282,13 +8528,13 @@ ${content}</tr>
                 });
                 const tip = lib.h("div", [
                   lib.h("div", { className: "search-infos-num" }, "1"),
-                  "\u8868\u793A\u7B49\u5F85\u5904\u7406\u4E2D",
+                  " 表示等待处理中",
                   lib.h("br"),
                   lib.h("div", { className: "search-infos-num requested" }, "1"),
-                  "\u8868\u793A\u5DF2\u5B8C\u6210\u641C\u7D22 ",
+                  " 表示已完成搜索 ",
                   lib.h("br"),
                   lib.h("div", { className: "search-infos-num finish" }, "1"),
-                  "\u8868\u793A\u5DF2\u641C\u7D22\u5DF2\u7B54\u9898 "
+                  " 表示已搜索已答题 "
                 ]);
                 container2.prepend(
                   lib.h("hr"),
@@ -8297,53 +8543,60 @@ ${content}</tr>
                     [
                       lib.$ui.space(
                         [
-                          lib.h("span", `\u5DF2\u641C\u9898: ${this.cfg.requestedCount}/${this.cfg.totalQuestionCount}`),
-                          lib.h("span", `\u5DF2\u7B54\u9898: ${this.cfg.resolvedCount}/${this.cfg.totalQuestionCount}`),
-                          lib.h("a", "\u63D0\u793A", (btn) => {
+                          lib.h("span", `已搜题: ${this.cfg.requestedCount}/${this.cfg.totalQuestionCount}`),
+                          lib.h("span", `已答题: ${this.cfg.resolvedCount}/${this.cfg.totalQuestionCount}`),
+                          lib.h("a", "提示", (btn) => {
                             btn.style.cursor = "pointer";
                             btn.onclick = () => {
                               lib.$modal.confirm({ content: tip, footer: void 0 });
                             };
-                          })
+                          }),
+                          lib.$ui.tooltip(
+                            lib.h("a", "清空结果", (btn) => {
+                              btn.title = "仅用于不会自动清空搜索结果的场景，例如超星非整卷预览模式";
+                              btn.style.cursor = "pointer";
+                              btn.onclick = () => {
+                                var _a, _b, _c, _d;
+                                this.methods.clearResults();
+                                const { panel, header: header2 } = CXProject.scripts.work;
+                                if (panel && header2) {
+                                  (_b = (_a = CXProject.scripts.work).onrender) == null ? void 0 : _b.call(_a, { panel, header: header2 });
+                                  (_d = (_c = CommonProject.scripts.workResults).onrender) == null ? void 0 : _d.call(_c, { panel, header: header2 });
+                                }
+                              };
+                            })
+                          )
                         ],
                         { separator: "|" }
                       )
                     ],
                     (div) => {
-                      div.style.marginBottom = "12px";
+                      div.style.textAlign = "center";
+                      div.style.fontSize = "12px";
                     }
-                  ),
-                  lib.h("hr")
+                  )
                 );
               }, 100);
               const createResult = (result) => {
                 if (result) {
-                  const error = lib.h("span", {}, (el) => el.style.color = "red");
+                  let info = null;
                   if (result.requested === false && result.resolved === false) {
-                    return lib.h("div", [
-                      result.question,
-                      createQuestionTitleExtra(result.question),
-                      lib.h("hr"),
-                      "\u5F53\u524D\u9898\u76EE\u8FD8\u672A\u5F00\u59CB\u641C\u7D22\uFF0C\u8BF7\u7A0D\u7B49\u3002"
-                    ]);
+                    info = lib.h("div", { className: "result-info unresolved" }, "等待搜索中... 🔍");
+                  } else if (result.error) {
+                    info = lib.h("div", { className: "result-info error" }, "❌ " + result.error);
+                  } else if (result.searchInfos.length === 0) {
+                    info = lib.h("div", { className: "result-info no-answer" }, "❌ 题库没搜索到答案");
                   } else {
-                    if (result.error) {
-                      error.innerText = result.error;
-                      return lib.h("div", [result.question, createQuestionTitleExtra(result.question), lib.h("hr"), error]);
-                    } else if (result.searchInfos.length === 0) {
-                      error.innerText = "\u6B64\u9898\u672A\u641C\u7D22\u5230\u7B54\u6848";
-                      return lib.h("div", [result.question, createQuestionTitleExtra(result.question), lib.h("hr"), error]);
-                    } else {
-                      error.innerText = "\u6B64\u9898\u672A\u5B8C\u6210, \u53EF\u80FD\u662F\u6CA1\u6709\u5339\u914D\u7684\u9009\u9879\u3002";
-                      return lib.h("div", [
-                        ...result.finish ? [] : [result.resolved === false ? "\u6B63\u5728\u7B49\u5F85\u7B54\u9898\u4E2D\uFF0C\u8BF7\u7A0D\u7B49\u3002" : error],
-                        lib.h(SearchInfosElement, {
-                          infos: result.searchInfos,
-                          question: result.question
-                        })
-                      ]);
-                    }
+                    info = result.finish ? null : result.resolved === false ? lib.h("div", { className: "result-info unresolved" }, "等待顺序答题中... ⏱️") : lib.h("div", { className: "result-info error" }, "❌ 此题未完成, 可能是没有匹配的选项。");
                   }
+                  return lib.h("div", [
+                    lib.h("div", { className: "alert-info-wrapper" }, [info != null ? info : lib.h("div")]),
+                    lib.h(SearchInfosElement, {
+                      infos: result.searchInfos,
+                      question: result.question,
+                      type: result.type
+                    })
+                  ]);
                 } else {
                   return lib.h("div", "undefined");
                 }
@@ -8362,24 +8615,24 @@ ${content}</tr>
         }
       }),
       onlineSearch: new lib.Script({
-        name: "\u{1F50E} \u5728\u7EBF\u641C\u9898",
-        matches: [["\u6240\u6709\u9875\u9762", /.*/]],
+        name: "🔎 在线搜题",
+        matches: [["所有页面", /.*/]],
         namespace: "common.online-search",
         configs: {
           notes: {
-            defaultValue: "\u67E5\u9898\u524D\u8BF7\u5728 \u201C\u901A\u7528-\u5168\u5C40\u8BBE\u7F6E\u201D \u4E2D\u8BBE\u7F6E\u9898\u5E93\u914D\u7F6E\uFF0C\u624D\u80FD\u8FDB\u884C\u5728\u7EBF\u641C\u9898\u3002"
+            defaultValue: "查题前请在 “通用-全局设置” 中设置题库配置，才能进行在线搜题。"
           },
           selectSearch: {
-            label: "\u5212\u8BCD\u641C\u7D22",
+            label: "划词搜索",
             defaultValue: true,
-            attrs: { type: "checkbox", title: "\u4F7F\u7528\u9F20\u6807\u6ED1\u52A8\u9009\u62E9\u9875\u9762\u4E2D\u7684\u9898\u76EE\u8FDB\u884C\u641C\u7D22\u3002" }
+            attrs: { type: "checkbox", title: "使用鼠标滑动选择页面中的题目进行搜索。" }
           },
           searchValue: {
             sync: true,
-            label: "\u641C\u7D22\u9898\u76EE",
+            label: "搜索题目",
             tag: "textarea",
             attrs: {
-              placeholder: "\u8F93\u5165\u9898\u76EE\uFF0C\u8BF7\u5C3D\u91CF\u4FDD\u8BC1\u9898\u76EE\u5B8C\u6574\uFF0C\u4E0D\u8981\u6F0F\u5B57",
+              placeholder: "输入题目，请尽量保证题目完整，不要漏字",
               style: {
                 minWidth: "300px",
                 minHeight: "64px"
@@ -8408,10 +8661,10 @@ ${content}</tr>
           });
           const search = async (value) => {
             if (CommonProject.scripts.settings.cfg.answererWrappers.length === 0) {
-              lib.$modal.alert({ content: "\u8BF7\u5148\u5728 \u901A\u7528-\u5168\u5C40\u8BBE\u7F6E \u914D\u7F6E\u9898\u5E93\uFF0C\u624D\u80FD\u8FDB\u884C\u5728\u7EBF\u641C\u9898\u3002" });
+              lib.$modal.alert({ content: "请先在 通用-全局设置 配置题库，才能进行在线搜题。" });
               return;
             }
-            content.replaceChildren(lib.h("span", "\u641C\u7D22\u4E2D..."));
+            content.replaceChildren(lib.h("span", "搜索中..."));
             if (value) {
               const t2 = Date.now();
               const infos = await defaultAnswerWrapperHandler(CommonProject.scripts.settings.cfg.answererWrappers, {
@@ -8426,7 +8679,7 @@ ${content}</tr>
                     lib.h(
                       "div",
                       { style: { color: "#a1a1a1" } },
-                      `\u641C\u7D22\u5230 ${infos.map((i) => i.results).flat().length} \u4E2A\u7ED3\u679C\uFF0C\u5171\u8017\u65F6 ${resume} \u79D2`
+                      `搜索到 ${infos.map((i) => i.results).flat().length} 个结果，共耗时 ${resume} 秒`
                     ),
                     lib.h(SearchInfosElement, {
                       infos: infos.map((info) => ({
@@ -8446,10 +8699,10 @@ ${content}</tr>
                 )
               );
             } else {
-              content.replaceChildren(lib.h("span", "\u9898\u76EE\u4E0D\u80FD\u4E3A\u7A7A\uFF01"));
+              content.replaceChildren(lib.h("span", "题目不能为空！"));
             }
           };
-          const button = lib.h("button", "\u641C\u7D22", (button2) => {
+          const button = lib.h("button", "搜索", (button2) => {
             button2.className = "base-style-button";
             button2.style.width = "120px";
             button2.onclick = () => {
@@ -8462,8 +8715,8 @@ ${content}</tr>
       }),
       render: RenderScript,
       hack: new lib.Script({
-        name: "\u9875\u9762\u590D\u5236\u7C98\u8D34\u9650\u5236\u89E3\u9664",
-        matches: [["\u6240\u6709\u9875\u9762", /.*/]],
+        name: "页面复制粘贴限制解除",
+        matches: [["所有页面", /.*/]],
         hideInPanel: true,
         onactive() {
           enableCopy([document, document.body]);
@@ -8478,14 +8731,14 @@ ${content}</tr>
         }
       }),
       disableDialog: new lib.Script({
-        name: "\u7981\u6B62\u5F39\u7A97",
-        matches: [["\u6240\u6709\u9875\u9762", /.*/]],
+        name: "禁止弹窗",
+        matches: [["所有页面", /.*/]],
         hideInPanel: true,
         priority: 1,
         onstart() {
           function disableDialog(msg) {
             lib.$modal.alert({
-              profile: "\u5F39\u7A97\u6765\u81EA\uFF1A" + location.origin,
+              profile: "弹窗来自：" + location.origin,
               content: msg
             });
           }
@@ -8498,12 +8751,12 @@ ${content}</tr>
         }
       }),
       apps: new lib.Script({
-        name: "\u{1F4F1} \u62D3\u5C55\u5E94\u7528",
+        name: "📱 拓展应用",
         matches: [["", /.*/]],
         namespace: "common.apps",
         configs: {
           notes: {
-            defaultValue: "\u8FD9\u91CC\u662F\u4E00\u4E9B\u5176\u4ED6\u7684\u5E94\u7528\u6216\u8005\u62D3\u5C55\u529F\u80FD\u3002"
+            defaultValue: "这里是一些其他的应用或者拓展功能。"
           },
           localQuestionCaches: {
             defaultValue: [],
@@ -8547,7 +8800,7 @@ ${content}</tr>
               for (const cache of caches) {
                 if (cache.title.trim() === title.trim()) {
                   results.push({
-                    name: `\u3010\u9898\u5E93\u7F13\u5B58\u3011${cache.from}`,
+                    name: `【题库缓存】${cache.from}`,
                     homepage: cache.homepage,
                     results: [{ answer: cache.answer, question: cache.title }]
                   });
@@ -8561,14 +8814,14 @@ ${content}</tr>
             async showChangelog() {
               const changelog = lib.h("div", {
                 className: "markdown card",
-                innerHTML: "\u52A0\u8F7D\u4E2D...",
+                innerHTML: "加载中...",
                 style: { maxWidth: "600px" }
               });
               lib.$modal.simple({
                 width: 600,
                 content: lib.h("div", [
                   lib.h("div", { className: "notes card" }, [
-                    lib.$ui.notes(["\u6B64\u9875\u9762\u5B9E\u65F6\u66F4\u65B0\uFF0C\u9047\u5230\u95EE\u9898\u53EF\u4EE5\u67E5\u770B\u6700\u65B0\u7248\u672C\u662F\u5426\u4FEE\u590D\u3002"])
+                    lib.$ui.notes(["此页面实时更新，遇到问题可以查看最新版本是否修复。"])
                   ]),
                   changelog
                 ])
@@ -8591,7 +8844,7 @@ ${content}</tr>
             borderRadius: "8px",
             cursor: "pointer"
           };
-          const cachesBtn = lib.h("div", { innerText: "\u{1F4BE} \u9898\u5E93\u7F13\u5B58", style: btnStyle }, (btn) => {
+          const cachesBtn = lib.h("div", { innerText: "💾 题库缓存", style: btnStyle }, (btn) => {
             btn.onclick = () => {
               const questionCaches = this.cfg.localQuestionCaches;
               const list = questionCaches.map(
@@ -8612,8 +8865,8 @@ ${content}</tr>
                         lib.h(
                           "span",
                           {
-                            title: `\u6765\u81EA\uFF1A${c.from || "\u672A\u77E5\u9898\u5E93"}
-\u4E3B\u9875\uFF1A${c.homepage || "\u672A\u77E5\u4E3B\u9875"}`,
+                            title: `来自：${c.from || "未知题库"}
+主页：${c.homepage || "未知主页"}`,
                             style: { fontWeight: "bold" }
                           },
                           c.title
@@ -8629,15 +8882,15 @@ ${content}</tr>
                 content: lib.h("div", [
                   lib.h("div", { className: "notes card" }, [
                     lib.$ui.notes([
-                      "\u9898\u5E93\u7F13\u5B58\u662F\u5C06\u9898\u5E93\u7684\u9898\u76EE\u548C\u7B54\u6848\u4FDD\u5B58\u5728\u5185\u5B58\uFF0C\u5728\u91CD\u590D\u4F7F\u7528\u65F6\u53EF\u4EE5\u76F4\u63A5\u4ECE\u5185\u5B58\u83B7\u53D6\uFF0C\u4E0D\u9700\u8981\u518D\u6B21\u8BF7\u6C42\u9898\u5E93\u3002",
-                      "\u4EE5\u4E0B\u662F\u5F53\u524D\u5B58\u50A8\u7684\u9898\u5E93\uFF0C\u9ED8\u8BA4\u5B58\u50A8200\u9898\uFF0C\u5F53\u524D\u9875\u9762\u5173\u95ED\u540E\u4F1A\u81EA\u52A8\u6E05\u9664\u3002"
+                      "题库缓存是将题库的题目和答案保存在内存，在重复使用时可以直接从内存获取，不需要再次请求题库。",
+                      "以下是当前存储的题库，默认存储200题，当前页面关闭后会自动清除。"
                     ])
                   ]),
                   lib.h("div", { className: "card" }, [
                     lib.$ui.space(
                       [
-                        lib.h("span", ["\u5F53\u524D\u7F13\u5B58\u6570\u91CF\uFF1A" + questionCaches.length]),
-                        lib.$ui.button("\u6E05\u7A7A\u9898\u5E93\u7F13\u5B58", {}, (btn2) => {
+                        lib.h("span", ["当前缓存数量：" + questionCaches.length]),
+                        lib.$ui.button("清空题库缓存", {}, (btn2) => {
                           btn2.onclick = () => {
                             this.cfg.localQuestionCaches = [];
                             list.forEach((el) => el.remove());
@@ -8649,7 +8902,7 @@ ${content}</tr>
                   ]),
                   lib.h(
                     "div",
-                    questionCaches.length === 0 ? [lib.h("div", { style: { textAlign: "center" } }, "\u6682\u65E0\u9898\u5E93\u7F13\u5B58")] : list
+                    questionCaches.length === 0 ? [lib.h("div", { style: { textAlign: "center" } }, "暂无题库缓存")] : list
                   )
                 ])
               });
@@ -8659,9 +8912,9 @@ ${content}</tr>
             lib.h(
               "div",
               {
-                innerText: "\u{1F4E4} \u5BFC\u51FA\u5168\u90E8\u8BBE\u7F6E",
+                innerText: "📤 导出全部设置",
                 style: btnStyle,
-                title: "\u5BFC\u51FA\u5168\u90E8\u9875\u9762\u7684\u8BBE\u7F6E\uFF0C\u5305\u62EC\u5168\u5C40\u8BBE\u7F6E\uFF0C\u9898\u5E93\u914D\u7F6E\uFF0C\u5B66\u4E60\u8BBE\u7F6E\u7B49\u7B49\u3002\uFF08\u6587\u4EF6\u540E\u7F00\u540D\u4E3A\uFF1A.ocssetting\uFF09"
+                title: "导出全部页面的设置，包括全局设置，题库配置，学习设置等等。（文件后缀名为：.ocssetting）"
               },
               (btn) => {
                 btn.onclick = () => {
@@ -8685,9 +8938,9 @@ ${content}</tr>
             lib.h(
               "div",
               {
-                innerText: "\u{1F4E5} \u5BFC\u5165\u5168\u90E8\u8BBE\u7F6E",
+                innerText: "📥 导入全部设置",
                 style: btnStyle,
-                title: "\u5BFC\u5165\u5E76\u4E14\u8986\u76D6\u5F53\u524D\u7684\u5168\u90E8\u8BBE\u7F6E\u3002\uFF08\u6587\u4EF6\u540E\u7F00\u540D\u4E3A\uFF1A.ocssetting\uFF09"
+                title: "导入并且覆盖当前的全部设置。（文件后缀名为：.ocssetting）"
               },
               (btn) => {
                 btn.onclick = () => {
@@ -8701,7 +8954,7 @@ ${content}</tr>
                       for (const key of Object.keys(obj)) {
                         lib.$store.set(key, obj[key]);
                       }
-                      lib.$message.success({ content: "\u8BBE\u7F6E\u5BFC\u5165\u6210\u529F\uFF0C\u9875\u9762\u5373\u5C06\u5237\u65B0\u3002", duration: 3 });
+                      lib.$message.success({ content: "设置导入成功，页面即将刷新。", duration: 3 });
                       setTimeout(() => {
                         location.reload();
                       }, 3e3);
@@ -8722,7 +8975,7 @@ ${content}</tr>
           });
           const sep = (text) => lib.h("div", { className: "separator", style: { padding: "4px 0px" } }, text);
           panel.body.replaceChildren(
-            lib.h("div", [sep("\u9898\u5E93\u62D3\u5C55"), cachesBtn, sep("\u5176\u4ED6\u529F\u80FD"), exportSetting, importSetting])
+            lib.h("div", [sep("题库拓展"), cachesBtn, sep("其他功能"), exportSetting, importSetting])
           );
         }
       })
@@ -8758,7 +9011,7 @@ ${content}</tr>
                       item.name
                     ];
                     lib.$message.warn({
-                      content: "\u9898\u5E93\uFF1A" + item.name + " \u5DF2\u88AB\u505C\u7528\uFF0C\u5982\u9700\u5F00\u542F\u8BF7\u5728\uFF1A\u901A\u7528-\u5168\u5C40\u8BBE\u7F6E-\u9898\u5E93\u914D\u7F6E\u4E2D\u5F00\u542F\u3002",
+                      content: "题库：" + item.name + " 已被停用，如需开启请在：通用-全局设置-题库配置中开启。",
                       duration: 30
                     });
                   } else {
@@ -8766,25 +9019,25 @@ ${content}</tr>
                       (name) => name !== item.name
                     );
                     lib.$message.success({
-                      content: "\u9898\u5E93\uFF1A" + item.name + " \u5DF2\u542F\u7528\u3002",
+                      content: "题库：" + item.name + " 已启用。",
                       duration: 3
                     });
                   }
                 };
-                checkbox.title = "\u70B9\u51FB\u505C\u7528\u6216\u8005\u542F\u7528\u9898\u5E93\uFF0C\u505C\u7528\u9898\u5E93\u540E\u5C06\u65E0\u6CD5\u5728\u81EA\u52A8\u7B54\u9898\u4E2D\u67E5\u8BE2\u9898\u76EE";
+                checkbox.title = "点击停用或者启用题库，停用题库后将无法在自动答题中查询题目";
                 return lib.$ui.tooltip(checkbox);
               })(),
               lib.h("span", item.name)
             ])
           ]),
           lib.h("ul", [
-            lib.h("li", ["\u540D\u5B57	", item.name]),
-            lib.h("li", { innerHTML: `\u5B98\u7F51	<a target="_blank" href=${item.homepage}>${item.homepage || "\u65E0"}</a>` }),
-            lib.h("li", ["\u63A5\u53E3	", item.url]),
-            lib.h("li", ["\u8BF7\u6C42\u65B9\u6CD5	", item.method]),
-            lib.h("li", ["\u8BF7\u6C42\u7C7B\u578B	", item.type]),
-            lib.h("li", ["\u8BF7\u6C42\u5934	", JSON.stringify(item.headers, null, 4) || "\u65E0"]),
-            lib.h("li", ["\u8BF7\u6C42\u4F53	", JSON.stringify(item.data, null, 4) || "\u65E0"])
+            lib.h("li", ["名字	", item.name]),
+            lib.h("li", { innerHTML: `官网	<a target="_blank" href=${item.homepage}>${item.homepage || "无"}</a>` }),
+            lib.h("li", ["接口	", item.url]),
+            lib.h("li", ["请求方法	", item.method]),
+            lib.h("li", ["请求类型	", item.type]),
+            lib.h("li", ["请求头	", JSON.stringify(item.headers, null, 4) || "无"]),
+            lib.h("li", ["请求体	", JSON.stringify(item.data, null, 4) || "无"])
           ])
         ],
         (details) => {
@@ -8800,7 +9053,7 @@ ${content}</tr>
         width: 800,
         content: lib.h("div", [
           lib.h("div", [
-            "\u8FD0\u884C\u57DF\u540D\uFF1A",
+            "运行域名：",
             ...(project2.domains || []).map(
               (d) => lib.h(
                 "a",
@@ -8809,7 +9062,7 @@ ${content}</tr>
               )
             )
           ]),
-          lib.h("div", "\u811A\u672C\u5217\u8868\uFF1A"),
+          lib.h("div", "脚本列表："),
           lib.h(
             "ul",
             Object.keys(project2.scripts).sort((a, b) => project2.scripts[b].hideInPanel ? -1 : 1).map((key) => {
@@ -8819,15 +9072,15 @@ ${content}</tr>
                 [
                   lib.h("b", script2.name),
                   lib.$ui.notes([
-                    lib.h("span", ["\u64CD\u4F5C\u9762\u677F\uFF1A", script2.hideInPanel ? "\u9690\u85CF" : "\u663E\u793A"]),
+                    lib.h("span", ["操作面板：", script2.hideInPanel ? "隐藏" : "显示"]),
                     [
-                      "\u8FD0\u884C\u9875\u9762\uFF1A",
+                      "运行页面：",
                       lib.h(
                         "ul",
-                        script2.matches.map((m) => Array.isArray(m) ? m : ["\u65E0\u63CF\u8FF0", m]).map(
+                        script2.matches.map((m) => Array.isArray(m) ? m : ["无描述", m]).map(
                           (i) => lib.h("li", [
                             i[0],
-                            "\uFF1A",
+                            "：",
                             i[1] instanceof RegExp ? i[1].toString().replace(/\\/g, "").slice(1, -1) : lib.h("span", i[1])
                           ])
                         )
@@ -8841,48 +9094,63 @@ ${content}</tr>
               );
             }),
             (ul) => {
+              ul.style.padding = "12px 24px";
+              ul.style.border = "1px solid #e1e1e1";
+              ul.style.borderRadius = "4px";
+              ul.style.maxHeight = "400px";
+              ul.style.overflow = "auto";
               ul.style.paddingLeft = "42px";
             }
           )
         ])
       });
     };
-    return lib.h("div", { className: "user-guide card" }, [
-      lib.h("div", { className: "separator", style: { padding: "12px 0px" } }, "\u2728 \u652F\u6301\u7684\u7F51\u8BFE\u5E73\u53F0"),
-      lib.h("div", [
-        ...[CXProject, ZHSProject, ZJYProject, IcveMoocProject, ICourseProject].map((project2) => {
-          const btn = lib.h("button", { className: "base-style-button-secondary", style: { margin: "4px" } }, [project2.name]);
-          btn.onclick = () => {
-            showProjectDetails(project2);
-          };
-          return btn;
-        })
+    const gotoHome = lib.h("button", { className: "base-style-button-secondary" }, "🏡官网教程");
+    gotoHome.onclick = () => window.open("https://docs.ocsjs.com", "_blank");
+    const contactUs = lib.h("button", { className: "base-style-button-secondary" }, "🗨️交流群");
+    contactUs.onclick = () => window.open("https://docs.ocsjs.com/docs/about#交流方式", "_blank");
+    const changeLog = lib.h("button", { className: "base-style-button-secondary" }, "📄更新日志");
+    changeLog.onclick = () => CommonProject.scripts.apps.methods.showChangelog();
+    const cardStyle = {
+      border: "1px solid #eee",
+      borderRadius: "4px",
+      padding: "8px",
+      paddingTop: "4px"
+    };
+    return lib.h("div", { className: "user-guide" }, [
+      lib.h("div", { style: cardStyle }, [
+        lib.h("div", { style: { marginBottom: "4px", fontWeight: "bold" } }, [
+          "✨兼容的网课平台：",
+          lib.h("span", { className: "secondary", style: { fontWeight: "normal" } }, "（未适配的平台将无法运行，请等待适配）")
+        ]),
+        lib.h("div", [
+          ...[CXProject, ZHSProject, ZJYProject, IcveMoocProject, ICourseProject].map((project2) => {
+            const btn = lib.h("button", { className: "base-style-button-secondary", style: { margin: "4px" } }, [
+              project2.name
+            ]);
+            btn.onclick = () => {
+              showProjectDetails(project2);
+            };
+            return btn;
+          })
+        ])
       ]),
-      lib.h("div", { className: "separator", style: { padding: "12px 0px" } }, "\u{1F4D6} \u4F7F\u7528\u6559\u7A0B"),
-      lib.$ui.notes(
-        [
-          "\u6253\u5F00\u4EFB\u610F\u7F51\u8BFE\u5E73\u53F0\uFF0C\u7B49\u5F85\u811A\u672C\u52A0\u8F7D\uFF0C",
-          "\u811A\u672C\u52A0\u8F7D\u540E\u67E5\u770B\u6BCF\u4E2A\u7F51\u8BFE\u4E0D\u540C\u7684\u4F7F\u7528\u63D0\u793A\u3002",
-          "\u5982\u679C\u4E0D\u652F\u6301\u5F53\u524D\u7F51\u8BFE\uFF0C\u5219\u4E0D\u4F1A\u6709\u76F8\u5E94\u7684\u63D0\u793A\u4EE5\u53CA\u8BBE\u7F6E\u9762\u677F\u3002",
-          [
-            "\u6700\u540E\u6E29\u99A8\u63D0\u793A: ",
-            "- \u7981\u6B62\u4E0E\u5176\u4ED6\u811A\u672C\u4E00\u8D77\u4F7F\u7528\uFF0C\u5426\u5219\u51FA\u73B0\u7B54\u6848\u9009\u4E0D\u4E0A\u6216\u8005\u9875\u9762\u5361\u6B7B\uFF0C\u65E0\u9650\u5237\u65B0\uFF0C\u7B49\u95EE\u9898\u4E00\u5F8B\u540E\u679C\u81EA\u8D1F\u3002",
-            "- \u4EFB\u4F55\u7591\u95EE\u8BF7\u524D\u5F80\u5B98\u7F51\u67E5\u770B\u4EA4\u6D41\u7FA4\uFF0C\u8FDB\u5165\u4EA4\u6D41\u7FA4\u540E\u5E26\u622A\u56FE\u8FDB\u884C\u53CD\u9988\u3002",
-            "- \u8BF7\u5C06\u6D4F\u89C8\u5668\u9875\u9762\u4FDD\u6301\u6700\u5927\u5316\uFF0C\u6216\u8005\u7F29\u5C0F\u7A97\u53E3\uFF0C\u4E0D\u80FD\u6700\u5C0F\u5316\uFF0C\u5426\u5219\u53EF\u80FD\u5BFC\u81F4\u811A\u672C\u5361\u6B7B\uFF01"
-          ]
-        ],
-        "ol"
-      )
+      lib.h("div", { style: { ...cardStyle, marginTop: "12px" } }, [
+        lib.h("div", { style: { marginBottom: "8px", fontWeight: "bold" } }, "🌐快捷访问："),
+        gotoHome,
+        contactUs,
+        changeLog
+      ])
     ]);
   };
   const playbackRate = {
-    label: "\u89C6\u9891\u500D\u901F",
+    label: "视频倍速",
     tag: "select",
     options: [1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.5, 4, 6, 8, 16].map((rate) => [rate.toString(), rate + " x"]),
     defaultValue: "1"
   };
   const volume = {
-    label: "\u97F3\u91CF\u8C03\u8282",
+    label: "音量调节",
     attrs: { type: "range", step: "0.05", min: "0", max: "1" },
     defaultValue: 0,
     onload() {
@@ -8890,29 +9158,34 @@ ${content}</tr>
     }
   };
   const restudy = {
-    label: "\u590D\u4E60\u6A21\u5F0F",
-    attrs: { title: "\u5DF2\u7ECF\u5B8C\u6210\u7684\u89C6\u9891\u7EE7\u7EED\u5B66\u4E60", type: "checkbox" },
+    label: "复习模式",
+    attrs: { title: "已经完成的视频继续学习", type: "checkbox" },
     defaultValue: false
   };
   const definition = {
-    label: "\u6E05\u6670\u5EA6",
+    label: "清晰度",
     tag: "select",
     defaultValue: "line1bq",
     options: [
-      ["line1bq", "\u6D41\u7545"],
-      ["line1gq", "\u9AD8\u6E05"]
+      ["line1bq", "流畅"],
+      ["line1gq", "高清"]
     ]
   };
   const workNotes = {
-    defaultValue: lib.$ui.notes(["\u81EA\u52A8\u7B54\u9898\u524D\u8BF7\u5728 \u201C\u901A\u7528-\u5168\u5C40\u8BBE\u7F6E\u201D \u4E2D\u8BBE\u7F6E\u9898\u5E93\u914D\u7F6E\u3002", "\u53EF\u4EE5\u642D\u914D \u201C\u901A\u7528-\u5728\u7EBF\u641C\u9898\u201D \u4E00\u8D77\u4F7F\u7528\u3002"]).outerHTML
+    defaultValue: lib.$ui.notes([
+      "自动答题前请在 “通用-全局设置” 中设置题库配置。",
+      "可以搭配 “通用-在线搜题” 一起使用。",
+      "⚠️禁止同时开多个作业/考试页面。"
+    ]).outerHTML
   };
+  let globalControlPanel = null;
   function commonWork(script2, options) {
     CommonProject.scripts.render.methods.pin(script2);
     let worker;
     let startBtnPressed = false;
     let checkFailed = false;
     let running = false;
-    const createControls = () => {
+    const createWorkControlPanel = () => {
       const { controlBtn, restartBtn, startBtn } = createWorkerControl({
         workerProvider: () => worker,
         onStart: async () => {
@@ -8938,32 +9211,39 @@ ${content}</tr>
         { style: { marginTop: "12px", display: "flex" } },
         running ? [controlBtn, restartBtn] : [startBtn]
       );
+      globalControlPanel = container2;
       return { container: container2, startBtn, restartBtn, controlBtn };
     };
     const workResultPanel = () => CommonProject.scripts.workResults.methods.createWorkResultsPanel();
-    script2.on("render", () => {
-      var _a, _b;
-      let gotoSettingsBtnContainer = "";
-      if (checkFailed) {
-        const gotoSettingsBtn = lib.$ui.button("\u{1F449} \u524D\u5F80\u8BBE\u7F6E\u9898\u5E93\u914D\u7F6E", {
-          className: "base-style-button",
-          style: { flex: "1", padding: "4px" }
-        });
-        gotoSettingsBtn.style.flex = "1";
-        gotoSettingsBtn.style.padding = "4px";
-        gotoSettingsBtn.onclick = () => {
-          CommonProject.scripts.render.methods.pin(CommonProject.scripts.settings);
-        };
-        gotoSettingsBtnContainer = lib.h("div", { style: { display: "flex" } }, [gotoSettingsBtn]);
-      }
-      (_b = (_a = script2.panel) == null ? void 0 : _a.body) == null ? void 0 : _b.replaceChildren(
-        lib.h("div", { style: { marginTop: "12px" } }, [
-          gotoSettingsBtnContainer,
-          createControls().container,
-          workResultPanel()
-        ])
-      );
-    });
+    const sync_script = [script2];
+    if (options.enable_control_panel) {
+      sync_script.push(CommonProject.scripts.workResults);
+    }
+    for (const script22 of sync_script) {
+      script22.on("render", () => {
+        var _a, _b;
+        let gotoSettingsBtnContainer = "";
+        if (checkFailed) {
+          const gotoSettingsBtn = lib.$ui.button("👉 前往设置题库配置", {
+            className: "base-style-button",
+            style: { flex: "1", padding: "4px" }
+          });
+          gotoSettingsBtn.style.flex = "1";
+          gotoSettingsBtn.style.padding = "4px";
+          gotoSettingsBtn.onclick = () => {
+            CommonProject.scripts.render.methods.pin(CommonProject.scripts.settings);
+          };
+          gotoSettingsBtnContainer = lib.h("div", { style: { display: "flex" } }, [gotoSettingsBtn]);
+        }
+        (_b = (_a = script22.panel) == null ? void 0 : _a.body) == null ? void 0 : _b.replaceChildren(
+          lib.h("div", { style: { marginTop: "12px" } }, [
+            gotoSettingsBtnContainer,
+            ...options.enable_control_panel ? [globalControlPanel || createWorkControlPanel().container] : [],
+            workResultPanel()
+          ])
+        );
+      });
+    }
     const workOptions = CommonProject.scripts.settings.methods.getWorkOptions();
     let checkMessage = workPreCheckMessage({
       onrun: () => startBtnPressed === false && start2(),
@@ -8982,10 +9262,11 @@ ${content}</tr>
       if (worker) {
         (_b = options.onWorkerCreated) == null ? void 0 : _b.call(options, worker);
       }
-      const { container: container2, controlBtn } = createControls();
+      const { container: container2, controlBtn } = createWorkControlPanel();
       (_d = (_c = script2.panel) == null ? void 0 : _c.body) == null ? void 0 : _d.replaceChildren(container2, workResultPanel());
       worker == null ? void 0 : worker.once("done", () => {
         running = false;
+        globalControlPanel = null;
         controlBtn.disabled = true;
       });
     };
@@ -8993,9 +9274,9 @@ ${content}</tr>
   function createWorkerControl(options) {
     let stop = false;
     let stopMessage;
-    const startBtn = lib.$ui.button("\u25B6\uFE0F\u5F00\u59CB\u7B54\u9898");
-    const restartBtn = lib.$ui.button("\u{1F503}\u91CD\u65B0\u7B54\u9898");
-    const controlBtn = lib.$ui.button("\u23F8\u6682\u505C");
+    const startBtn = lib.$ui.button("▶️开始答题");
+    const restartBtn = lib.$ui.button("🔃重新答题");
+    const controlBtn = lib.$ui.button("⏸暂停");
     startBtn.onclick = () => {
       startBtn.remove();
       options.onStart();
@@ -9009,9 +9290,9 @@ ${content}</tr>
       stop = !stop;
       const worker = options.workerProvider();
       (_a = worker == null ? void 0 : worker.emit) == null ? void 0 : _a.call(worker, stop ? "stop" : "continuate");
-      controlBtn.value = stop ? "\u25B6\uFE0F\u7EE7\u7EED" : "\u23F8\uFE0F\u6682\u505C";
+      controlBtn.value = stop ? "▶️继续" : "⏸️暂停";
       if (stop) {
-        stopMessage = lib.$message.warn({ duration: 0, content: "\u6682\u505C\u4E2D..." });
+        stopMessage = lib.$message.warn({ duration: 0, content: "暂停中..." });
       } else {
         stopMessage == null ? void 0 : stopMessage.remove();
       }
@@ -9035,7 +9316,7 @@ ${content}</tr>
     img.after(src2);
   }
   function simplifyWorkResult(results, titleTransform) {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f;
     const res = [];
     let i = 0;
     for (const wr of results) {
@@ -9043,9 +9324,10 @@ ${content}</tr>
         requested: wr.requested,
         resolved: wr.resolved,
         error: wr.error,
-        question: (titleTransform == null ? void 0 : titleTransform(((_a = wr.ctx) == null ? void 0 : _a.elements.title) || [], i)) || ((_c = (_b = wr.ctx) == null ? void 0 : _b.elements.title) == null ? void 0 : _c.join(",")) || "",
-        finish: (_d = wr.result) == null ? void 0 : _d.finish,
-        searchInfos: ((_e = wr.ctx) == null ? void 0 : _e.searchInfos.map((sr) => ({
+        type: (_a = wr.ctx) == null ? void 0 : _a.type,
+        question: (titleTransform == null ? void 0 : titleTransform(((_b = wr.ctx) == null ? void 0 : _b.elements.title) || [], i)) || ((_d = (_c = wr.ctx) == null ? void 0 : _c.elements.title) == null ? void 0 : _d.join(",")) || "",
+        finish: (_e = wr.result) == null ? void 0 : _e.finish,
+        searchInfos: ((_f = wr.ctx) == null ? void 0 : _f.searchInfos.map((sr) => ({
           error: sr.error,
           name: sr.name,
           homepage: sr.homepage,
@@ -9081,7 +9363,7 @@ ${content}</tr>
     if (res) {
       return res;
     } else {
-      throw new Error("\u89C6\u9891/\u97F3\u9891\u672A\u627E\u5230\uFF0C\u6216\u8005\u52A0\u8F7D\u8D85\u65F6\u3002");
+      throw new Error("视频/音频未找到，或者加载超时。");
     }
   }
   function waitForElement(selector, opts) {
@@ -9107,13 +9389,13 @@ ${content}</tr>
     showError: () => {
       const href = "https://docs.ocsjs.com/docs/script-helper";
       const errorEl = lib.h("div", [
-        "\u5F53\u524D\u9875\u9762\u9700\u8981\u4E0B\u8F7DOCS\u684C\u9762\u7AEF\uFF0C\u5E76\u5728\u684C\u9762\u7AEF\u4E2D\u65B0\u5EFA\u6D4F\u89C8\u5668\uFF0C\u5728\u65B0\u5EFA\u7684\u6D4F\u89C8\u5668\u4E2D\u624D\u80FD\u8FDB\u884C\u6B63\u5E38\u5237\u8BFE\uFF0C\u70B9\u51FB\u94FE\u63A5\u67E5\u770B\u8BE6\u60C5 => ",
+        "当前页面需要下载OCS桌面端，并在桌面端中新建浏览器，在新建的浏览器中才能进行正常刷课，点击链接查看详情 => ",
         lib.h("a", { href, target: "_blank" }, href)
       ]);
       lib.$modal.alert({
         maskCloseable: false,
-        title: "\u26D4 \u9519\u8BEF",
-        confirmButtonText: "\u67E5\u770B\u8BE6\u60C5",
+        title: "⛔ 错误",
+        confirmButtonText: "查看详情",
         content: errorEl.cloneNode(true),
         onConfirm() {
           window.open(href, "_blank");
@@ -9130,6 +9412,13 @@ ${content}</tr>
       stopMessage: void 0
     }
   };
+  const remote_required_pages = ["fusioncourseh5.zhihuishu.com", "studywisdomh5.zhihuishu.com"];
+  const gxk_read_notes = [
+    "⚠️ 如果未开始答题，请尝试刷新页面。",
+    "⚠️ 禁止同时打开多个作业/考试页面。",
+    ["⚠️ 答题中请勿进行任何操作，如需暂停答题", "请等待全部题目搜索完成并执行自动保存功能后才能操作。"],
+    ["⚠️ 暂停后手动操作请确保每个题目都点击下一题", "进行答案保存（不然不会保存，提交没分）"]
+  ];
   class StudyVideoH5 {
     constructor() {
       this.remotePage = void 0;
@@ -9142,11 +9431,11 @@ ${content}</tr>
     }
     getCourseName() {
       var _a;
-      return ((_a = lib.$el(".source-name")) == null ? void 0 : _a.textContent) || "\u65E0\u540D\u79F0";
+      return ((_a = lib.$el(".source-name")) == null ? void 0 : _a.textContent) || "无名称";
     }
     getChapterName(root2) {
       var _a;
-      return ((_a = root2.querySelector(".catalogue_title")) == null ? void 0 : _a.textContent) || "\u672A\u77E5\u7AE0\u8282";
+      return ((_a = root2.querySelector(".catalogue_title")) == null ? void 0 : _a.textContent) || "未知章节";
     }
     getNext(opts) {
       let videoItems = Array.from(document.querySelectorAll(".clearfix.video"));
@@ -9168,7 +9457,8 @@ ${content}</tr>
       if (controlsBar && sl) {
         controlsBar.style.display = "block";
         sl.style.display = "block";
-        const selector = `.speedList [rate="${rate === 1 ? "1.0" : rate}"]`;
+        const rate_parsed = parseFloat(String(rate));
+        const selector = `.speedList [rate="${rate_parsed === 1 ? "1.0" : rate}"],.speedList [rate="${rate_parsed === 1 ? "1" : rate}"]`;
         if (this.remotePage) {
           await this.remotePage.click(selector);
         } else {
@@ -9240,10 +9530,50 @@ ${content}</tr>
   }
   class FusionCourseH5 extends StudyVideoH5 {
     getCourseName() {
-      return "\u667A\u6167\u8BFE\u7A0B-AI";
+      return "智慧课程-AI";
+    }
+    getChapterName(root2) {
+      const is_resource_box_mode = !!document.querySelector(".resource-box");
+      if (is_resource_box_mode) {
+        const card_name = root2.querySelector(".file-name");
+        if (card_name) {
+          return card_name.textContent || "未知章节";
+        }
+      }
+      return super.getChapterName(root2);
     }
     getNext(opts) {
       const is_resource_box_mode = !!document.querySelector(".resource-box");
+      if (is_resource_box_mode) {
+        const getNextCard = () => {
+          const cards = Array.from(document.querySelectorAll(".resources-item"));
+          let target_el;
+          let start2 = false;
+          for (let index = 0; index < cards.length; index++) {
+            const card = cards[index];
+            if (start2) {
+              if (opts.restudy) {
+                target_el = card;
+                break;
+              } else {
+                if (card.querySelector(".isFinish")) {
+                  continue;
+                }
+                target_el = card;
+                break;
+              }
+            }
+            if (card.className.includes("active")) {
+              start2 = true;
+            }
+          }
+          return target_el;
+        };
+        const next_card = getNextCard();
+        if (next_card) {
+          return next_card;
+        }
+      }
       let videoItems = Array.from(document.querySelectorAll(".clearfix.video")).filter((el) => {
         if (is_resource_box_mode) {
           return !!el.querySelector(".resource-box");
@@ -9256,7 +9586,7 @@ ${content}</tr>
           videoItems = videoItems.filter((el) => {
             var _a;
             const text = ((_a = el.querySelector(".resource-text")) == null ? void 0 : _a.textContent) || "";
-            const [progress, total] = text.replace("\u5FC5\u5B66", "").trim().split("/").map((s) => parseInt(s));
+            const [progress, total] = text.replace("必学", "").trim().split("/").map((s) => parseInt(s));
             return progress < total;
           });
         } else {
@@ -9284,11 +9614,11 @@ ${content}</tr>
   class StudyPlusH5 extends StudyVideoH5 {
     getCourseName() {
       var _a, _b, _c;
-      return ((_c = (_b = (_a = lib.$el(".top-back-box > span:nth-child(2)")) == null ? void 0 : _a.textContent) == null ? void 0 : _b.match(/课程名称：(.+)/)) == null ? void 0 : _c[1]) || "\u65E0\u540D\u79F0";
+      return ((_c = (_b = (_a = lib.$el(".top-back-box > span:nth-child(2)")) == null ? void 0 : _a.textContent) == null ? void 0 : _b.match(/课程名称：(.+)/)) == null ? void 0 : _c[1]) || "无名称";
     }
     getChapterName(item) {
       var _a;
-      return ((_a = item.parentElement) == null ? void 0 : _a.textContent) || "\u672A\u77E5\u7AE0\u8282";
+      return ((_a = item.parentElement) == null ? void 0 : _a.textContent) || "未知章节";
     }
     hasJob() {
       var _a;
@@ -9361,11 +9691,11 @@ ${content}</tr>
   class WishdomH5 extends StudyVideoH5 {
     getCourseName() {
       var _a, _b, _c;
-      return ((_c = (_b = (_a = lib.$el(".course-name")) == null ? void 0 : _a.textContent) == null ? void 0 : _b.match(/课程名称：(.+)/)) == null ? void 0 : _c[1]) || "\u65E0\u540D\u79F0";
+      return ((_c = (_b = (_a = lib.$el(".course-name")) == null ? void 0 : _a.textContent) == null ? void 0 : _b.match(/课程名称：(.+)/)) == null ? void 0 : _c[1]) || "无名称";
     }
     getChapterName(item) {
       var _a;
-      return ((_a = item.parentElement) == null ? void 0 : _a.textContent) || "\u672A\u77E5\u7AE0\u8282";
+      return ((_a = item.parentElement) == null ? void 0 : _a.textContent) || "未知章节";
     }
     hasJob() {
       var _a;
@@ -9399,7 +9729,7 @@ ${content}</tr>
       const question_box = lib.$el(".question-body");
       if (question_box) {
         const options = lib.$$el(".question-body .options .option");
-        lib.$message.info("\u6B63\u5728\u5173\u95ED\u5F39\u7A97\u6D4B\u9A8C...");
+        lib.$message.info("正在关闭弹窗测验...");
         if (options.length !== 0) {
           await waitForCaptcha();
           CommonProject.scripts.render.methods.minimize();
@@ -9432,7 +9762,7 @@ ${content}</tr>
             close_btn.click();
           }
         }
-        lib.$message.info("\u5F39\u7A97\u6D4B\u9A8C\u5DF2\u5173\u95ED");
+        lib.$message.info("弹窗测验已关闭");
       }
       await lib.$.sleep(3e3);
       await this.handleTestDialog(remotePage);
@@ -9440,10 +9770,10 @@ ${content}</tr>
   }
   class Hike extends StudyVideoH5 {
     getCourseName() {
-      return "\u65E0\u540D\u79F0";
+      return "无名称";
     }
     getChapterName(item) {
-      return item.textContent || "\u672A\u77E5\u7AE0\u8282";
+      return item.textContent || "未知章节";
     }
     hasJob() {
       var _a;
@@ -9480,24 +9810,24 @@ ${content}</tr>
     }
   }
   const ZHSProject = lib.Project.create({
-    name: "\u77E5\u5230\u667A\u6167\u6811",
+    name: "知到智慧树",
     domains: [
       "zhihuishu.com",
       "hike-teaching-center.polymas.com"
     ],
     scripts: {
       guide: new lib.Script({
-        name: "\u{1F4A1} \u4F7F\u7528\u63D0\u793A",
+        name: "💡 使用提示",
         matches: [
-          ["\u5B66\u4E60\u9996\u9875", "https://onlineweb.zhihuishu.com/onlinestuh5"],
-          ["\u9996\u9875", "https://www.zhihuishu.com/"]
+          ["学习首页", "https://onlineweb.zhihuishu.com/onlinestuh5"],
+          ["首页", "https://www.zhihuishu.com/"]
         ],
         namespace: "zhs.guide",
         configs: {
           notes: {
             defaultValue: lib.$ui.notes([
-              "\u8BF7\u624B\u52A8\u8FDB\u5165\u89C6\u9891\u3001\u4F5C\u4E1A\u3001\u8003\u8BD5\u9875\u9762\uFF0C\u811A\u672C\u4F1A\u81EA\u52A8\u8FD0\u884C\u3002",
-              "\u5174\u8DA3\u8BFE\u4F1A\u81EA\u52A8\u4E0B\u4E00\u4E2A\uFF0C\u6240\u4EE5\u4E0D\u63D0\u4F9B\u811A\u672C\u3002"
+              "请手动进入视频、作业、考试页面，脚本会自动运行。",
+              "兴趣课会自动下一个，所以不提供脚本。"
             ]).outerHTML
           }
         },
@@ -9506,27 +9836,27 @@ ${content}</tr>
         }
       }),
       "gxk-study": new lib.Script({
-        name: "\u{1F5A5}\uFE0F \u5171\u4EAB\u8BFE-\u5B66\u4E60\u811A\u672C",
+        name: "🖥️ 共享课-学习脚本",
         matches: [
-          ["\u5171\u4EAB\u8BFE\u5B66\u4E60\u9875\u9762", "studyvideoh5.zhihuishu.com"],
-          ["\u65B0\u5171\u4EAB\u8BFE\u5B66\u4E60\u9875\u9762", "studyplush5.zhihuishu.com"],
-          ["\u65B0\u7248AI\u8BFE\u9875\u9762", "fusioncourseh5.zhihuishu.com/stuStudy"]
+          ["共享课学习页面", "studyvideoh5.zhihuishu.com"],
+          ["新共享课学习页面", "studyplush5.zhihuishu.com"],
+          ["新版AI课页面", "fusioncourseh5.zhihuishu.com/stuStudy"]
         ],
         namespace: "zhs.gxk.study",
         configs: {
           notes: {
             defaultValue: lib.$ui.notes([
-              "\u7AE0\u8282\u6D4B\u8BD5\u8BF7\u5927\u5BB6\u89C2\u770B\u5B8C\u89C6\u9891\u540E\u624B\u52A8\u6253\u5F00\u3002",
+              "章节测试请大家观看完视频后手动打开。",
               [
-                "\u8BF7\u5927\u5BB6\u4ED4\u7EC6\u6253\u5F00\u89C6\u9891\u4E0A\u65B9\u7684\u201D\u5B66\u524D\u5FC5\u8BFB\u201C\uFF0C\u67E5\u770B\u6210\u7EE9\u5206\u5E03\u3002",
-                "\u5982\u679C \u201C\u5E73\u65F6\u6210\u7EE9-\u5B66\u4E60\u4E60\u60EF\u6210\u7EE9\u201D \u5360\u6BD4\u591A\u7684\u8BDD\uFF0C\u5C31\u9700\u8981\u89C4\u5F8B\u5B66\u4E60\u3002",
-                "\u6BCF\u5929\u5B9A\u65F6\u534A\u5C0F\u65F6\u53EF\u83B7\u5F97\u4E00\u5206\u4E60\u60EF\u5206\u3002",
-                "\u5982\u679C\u4E0D\u60F3\u8981\u4E60\u60EF\u5206\u53EF\u5FFD\u7565\u3002"
+                "请大家仔细打开视频上方的”学前必读“，查看成绩分布。",
+                "如果 “平时成绩-学习习惯成绩” 占比多的话，就需要规律学习。",
+                "每天定时半小时可获得一分习惯分。",
+                "如果不想要习惯分可忽略。"
               ],
-              "\u8BF7\u4F7F\u7528\u65F6\u5173\u95ED\u5361\u5DF4\u65AF\u57FA\u8F6F\u4EF6\uFF0C\u5426\u5219\u4F1A\u5BFC\u81F4\u65E0\u6CD5\u8FD0\u884C\u3002",
-              "\u4E0D\u8981\u6700\u5C0F\u5316\u6D4F\u89C8\u5668\uFF0C\u53EF\u80FD\u5BFC\u81F4\u811A\u672C\u6682\u505C\u3002",
-              "\u8FD0\u884C\u4E2D\u8BF7\u5C06\u6D4F\u89C8\u5668\u7F29\u653E\u8C03\u6574\u81F3\u9002\u5408\u7684\u5927\u5C0F\uFF0C\u907F\u514D\u5143\u7D20\u906E\u6321\uFF0C\u65E0\u6CD5\u70B9\u51FB",
-              "\u4F8B\u5982\uFF1A\u8C03\u6574\u7F29\u653E\u5230 50%\uFF0C\u7136\u540E\u5237\u65B0\u9875\u9762\u5373\u53EF"
+              "请使用时关闭卡巴斯基软件，否则会被检测出异常脚本。",
+              "不要最小化浏览器，可能导致脚本暂停。",
+              "运行中请将浏览器缩放调整至适合的大小，避免元素遮挡，无法点击",
+              "例如：调整缩放到 50%，然后刷新页面即可"
             ]).outerHTML
           },
           studyRecord: {
@@ -9536,27 +9866,27 @@ ${content}</tr>
             }
           },
           stopTime: {
-            label: "\u5B9A\u65F6\u505C\u6B62",
+            label: "定时停止",
             tag: "select",
-            attrs: { title: "\u5230\u65F6\u95F4\u540E\u81EA\u52A8\u6682\u505C\u811A\u672C" },
+            attrs: { title: "到时间后自动暂停脚本" },
             defaultValue: "0",
             options: [
-              ["0", "\u5173\u95ED"],
-              ["0.5", "\u534A\u5C0F\u65F6\u540E"],
-              ["1", "\u4E00\u5C0F\u65F6\u540E"],
-              ["2", "\u4E24\u5C0F\u65F6\u540E"]
+              ["0", "关闭"],
+              ["0.5", "半小时后"],
+              ["1", "一小时后"],
+              ["2", "两小时后"]
             ]
           },
           restudy,
           reloadWhenError: {
-            label: "\u9ED1\u5C4F\u81EA\u52A8\u5237\u65B0",
-            attrs: { title: "\u89C6\u9891\u9ED1\u5C4F\u6216\u8005\u68C0\u6D4B\u4E0D\u5230\u89C6\u9891\u65F6\u81EA\u52A8\u5237\u65B0\u9875\u9762", type: "checkbox" },
+            label: "黑屏自动刷新",
+            attrs: { title: "视频黑屏或者检测不到视频时自动刷新页面", type: "checkbox" },
             defaultValue: true
           },
           volume,
           definition,
           playbackRate: {
-            label: "\u89C6\u9891\u500D\u901F",
+            label: "视频倍速",
             tag: "select",
             defaultValue: 1,
             options: [
@@ -9595,28 +9925,28 @@ ${content}</tr>
         onrender({ panel }) {
           panel.body.replaceChildren(
             lib.h("hr"),
-            lib.$ui.button("\u23F0\u68C0\u6D4B\u662F\u5426\u9700\u8981\u89C4\u5F8B\u5B66\u4E60", {}, (btn) => {
+            lib.$ui.button("⏰检测是否需要规律学习", {}, (btn) => {
               btn.style.marginRight = "12px";
               btn.onclick = () => {
                 var _a;
                 const href = ((_a = document.querySelector("[href*=stuLearnReportNew]")) == null ? void 0 : _a.getAttribute("href")) || "";
                 if (href) {
                   lib.$modal.alert({
-                    title: "\u89C4\u5F8B\u5B66\u4E60\u68C0\u6D4B",
-                    content: `\u81EA\u52A8\u68C0\u6D4B\u529F\u80FD\u5DF2\u5931\u6548\uFF0C<a href="${href}"> -> \u70B9\u51FB\u6B64\u5904 <- </a> \u524D\u5F80\u6210\u7EE9\u5206\u6790\u9875\u9762\uFF0C\u70B9\u51FB <b>\u201C\u5B66\u4E60\u4E60\u60EF\u201D</b> \u5373\u53EF\u67E5\u770B\u4E60\u60EF\u5206\u8BE6\u60C5\u3002`
+                    title: "规律学习检测",
+                    content: `自动检测功能已失效，<a href="${href}"> -> 点击此处 <- </a> 前往成绩分析页面，点击 <b>“学习习惯”</b> 即可查看习惯分详情。`
                   });
                 } else {
                   lib.$modal.alert({
-                    title: "\u63D0\u793A",
-                    content: "\u81EA\u52A8\u68C0\u6D4B\u529F\u80FD\u5DF2\u5931\u6548\uFF0C\u8BF7\u81EA\u884C\u524D\u5F80\u6210\u7EE9\u5206\u6790\u9875\u9762\uFF0C\u70B9\u51FB\u5B66\u4E60\u4E60\u60EF\u5373\u53EF\u67E5\u770B\u4E60\u60EF\u5206\u8BE6\u60C5\u3002"
+                    title: "提示",
+                    content: "自动检测功能已失效，请自行前往成绩分析页面，点击学习习惯即可查看习惯分详情。"
                   });
                 }
               };
             }),
-            lib.$ui.button("\u{1F4D8}\u67E5\u770B\u5B66\u4E60\u8BB0\u5F55", {}, (btn) => {
+            lib.$ui.button("📘查看学习记录", {}, (btn) => {
               btn.onclick = () => {
                 lib.$modal.alert({
-                  title: "\u5B66\u4E60\u8BB0\u5F55",
+                  title: "学习记录",
                   content: lib.$ui.notes(
                     this.cfg.studyRecord.map((r) => {
                       const date = new Date(r.date);
@@ -9639,7 +9969,7 @@ ${content}</tr>
         },
         async oncomplete() {
           CommonProject.scripts.render.methods.pin(this);
-          const type = location.href.includes("fusioncourseh5") ? "AI\u8BFE\u7A0B" : location.href.includes("studyplush5") ? "\u65B0\u5171\u4EAB\u8BFE" : "\u5171\u4EAB\u8BFE";
+          const type = location.href.includes("fusioncourseh5") ? "AI课程" : location.href.includes("studyplush5") ? "新共享课" : "共享课";
           const ProcessorConstructor = location.href.includes("fusioncourseh5") ? FusionCourseH5 : location.href.includes("studyplush5") ? StudyPlusH5 : StudyVideoH5;
           const processor = new ProcessorConstructor();
           setTimeout(() => {
@@ -9662,7 +9992,7 @@ ${content}</tr>
           await processor.init();
           this.onConfigChange("stopTime", (stopTime) => {
             if (stopTime === "0") {
-              lib.$message.info({ content: "\u5B9A\u65F6\u505C\u6B62\u5DF2\u5173\u95ED" });
+              lib.$message.info({ content: "定时停止已关闭" });
             } else {
               autoStop(stopTime);
             }
@@ -9694,19 +10024,19 @@ ${content}</tr>
             });
             fixProcessBar();
           }, 3e3);
-          lib.$message.info({ content: "3\u79D2\u540E\u5F00\u59CB\u5B66\u4E60", duration: 3 });
+          lib.$message.info({ content: "3秒后开始学习", duration: 3 });
           const remotePage = processor.remotePage;
           const study2 = async (opts) => {
             if (state$4.study.stop === false) {
               const item = processor.getNext({ next: opts.next, restudy: this.cfg.restudy });
               if (item) {
-                const msg = "\u5373\u5C06\u5B66\u4E60\uFF1A" + processor.getChapterName(item);
+                const msg = "即将学习：" + processor.getChapterName(item);
                 lib.$message.info({ content: msg });
                 $console.log(msg);
                 await lib.$.sleep(3e3);
                 $render.moveToEdge();
                 if (remotePage) {
-                  if (type === "\u65B0\u5171\u4EAB\u8BFE") {
+                  if (type === "新共享课") {
                     await remotePage.click(".title-box");
                     await lib.$.sleep(200);
                   }
@@ -9716,6 +10046,12 @@ ${content}</tr>
                   await lib.$.sleep(1e3);
                 } else {
                   item.click();
+                }
+                if (type === "AI课程" && document.querySelector(".preview-warp .doc-box,.preview-warp .ppt-box")) {
+                  lib.$message.info({ content: "检测到PPT资源，即将跳过..." });
+                  await lib.$.sleep(2e3);
+                  study2({ next: true });
+                  return;
                 }
                 watch(
                   processor,
@@ -9727,7 +10063,7 @@ ${content}</tr>
                   },
                   {
                     reload() {
-                      if (type === "\u5171\u4EAB\u8BFE") {
+                      if (type === "共享课") {
                         study2({ next: false });
                       } else {
                         location.reload();
@@ -9742,11 +10078,11 @@ ${content}</tr>
                 finishAlert();
               }
             } else {
-              const msg = "\u68C0\u6D4B\u5230\u5F53\u524D\u89C6\u9891\u5168\u90E8\u64AD\u653E\u5B8C\u6BD5\uFF0C\u5982\u679C\u8FD8\u6709\u672A\u5B8C\u6210\u7684\u89C6\u9891\u8BF7\u5237\u65B0\u91CD\u8BD5\uFF0C\u6216\u8005\u6253\u5F00\u590D\u4E60\u6A21\u5F0F\u3002";
+              const msg = "检测到当前视频全部播放完毕，如果还有未完成的视频请刷新重试，或者打开复习模式。";
               lib.$message.warn({ content: msg });
               CommonProject.scripts.settings.methods.notificationBySetting(msg, {
                 duration: 0,
-                extraTitle: "\u77E5\u9053\u667A\u6167\u6811\u5B66\u4E60\u811A\u672C"
+                extraTitle: "知道智慧树学习脚本"
               });
             }
           };
@@ -9754,23 +10090,28 @@ ${content}</tr>
         }
       }),
       "gxk-work": new lib.Script({
-        name: "\u270D\uFE0F \u5171\u4EAB\u8BFE-\u4F5C\u4E1A\u8003\u8BD5\u811A\u672C",
+        name: "✍️ 共享课-作业考试脚本",
         matches: [
-          ["\u5171\u4EAB\u8BFE\u4F5C\u4E1A\u9875\u9762", "zhihuishu.com/stuExamWeb.html#/webExamList/dohomework"],
-          ["\u5171\u4EAB\u8BFE\u8003\u8BD5\u9875\u9762", "zhihuishu.com/stuExamWeb.html#/webExamList/doexamination"],
-          ["\u4F5C\u4E1A\u8003\u8BD5\u5217\u8868", "zhihuishu.com/stuExamWeb.html#/webExamList\\?"]
+          ["共享课作业页面", "zhihuishu.com/stuExamWeb.html#/webExamList/dohomework"],
+          ["共享课考试页面", "zhihuishu.com/stuExamWeb.html#/webExamList/doexamination"],
+          ["作业考试列表", "zhihuishu.com/stuExamWeb.html#/webExamList\\?"]
         ],
         namespace: "zhs.gxk.work",
         configs: {
           notes: {
             defaultValue: lib.$ui.notes([
-              "\u81EA\u52A8\u7B54\u9898\u524D\u8BF7\u5728 \u201C\u901A\u7528-\u5168\u5C40\u8BBE\u7F6E\u201D \u4E2D\u8BBE\u7F6E\u9898\u5E93\u914D\u7F6E\u3002",
-              "\u53EF\u4EE5\u642D\u914D \u201C\u901A\u7528-\u5728\u7EBF\u641C\u9898\u201D \u4E00\u8D77\u4F7F\u7528\u3002",
-              "\u26A0\uFE0F\u5F00\u59CB\u524D\u8BF7\u4ED4\u7EC6\u9605\u8BFB\u4EE5\u4E0B\u4E8B\u9879\uFF1A\u26A0\uFE0F",
-              "\u26A0\uFE0F-\u5982\u679C\u672A\u5F00\u59CB\u7B54\u9898\uFF0C\u8BF7\u5C1D\u8BD5\u5237\u65B0\u9875\u9762\u3002",
-              ["\u26A0\uFE0F-\u7B54\u9898\u4E2D\u8BF7\u52FF\u8FDB\u884C\u4EFB\u4F55\u64CD\u4F5C\uFF0C\u5982\u9700\u6682\u505C\u7B54\u9898", "\u8BF7\u7B49\u5F85\u5168\u90E8\u9898\u76EE\u641C\u7D22\u5B8C\u6210\u5E76\u6267\u884C\u81EA\u52A8\u4FDD\u5B58\u529F\u80FD\u540E\u624D\u80FD\u64CD\u4F5C\u3002"],
-              ["\u26A0\uFE0F-\u6682\u505C\u540E\u624B\u52A8\u64CD\u4F5C\u8BF7\u786E\u4FDD\u6BCF\u4E2A\u9898\u76EE\u90FD\u70B9\u51FB\u4E0B\u4E00\u9898", "\u8FDB\u884C\u7B54\u6848\u4FDD\u5B58\uFF08\u4E0D\u7136\u4E0D\u4F1A\u4FDD\u5B58\uFF0C\u63D0\u4EA4\u6CA1\u5206\uFF09"]
+              "自动答题前请在 “通用-全局设置” 中设置题库配置。",
+              "可以搭配 “通用-在线搜题” 一起使用。",
+              ...gxk_read_notes
             ]).outerHTML
+          },
+          workDelay: {
+            label: "作业答题开始时间延迟（秒）",
+            defaultValue: 3,
+            attrs: { type: "number", min: 1, step: 1, max: 10 }
+          },
+          readNotes: {
+            defaultValue: false
           }
         },
         methods() {
@@ -9795,14 +10136,42 @@ ${content}</tr>
               const isWork2 = location.href.includes("dohomework");
               if (isExam2 || isWork2) {
                 const workInfo = await getWorkInfo(remotePage);
+                $render.moveToEdge();
+                CommonProject.scripts.render.methods.normal();
+                CommonProject.scripts.render.methods.pin(this);
+                if (this.cfg.readNotes === false) {
+                  const notes = lib.$ui.notes(gxk_read_notes).outerHTML;
+                  const start2 = await new Promise((resolve, reject) => {
+                    lib.$modal.confirm({
+                      title: isExam2 ? "脚本考前须知" : "脚本作业须知",
+                      content: notes,
+                      confirmButtonText: "我已知晓，开始自动答题",
+                      cancelButtonText: "取消答题",
+                      maskCloseable: false,
+                      onConfirm: () => {
+                        this.cfg.readNotes = true;
+                        resolve(true);
+                      },
+                      onCancel() {
+                        resolve(false);
+                      }
+                    });
+                  });
+                  if (!start2) {
+                    lib.$message.info({ content: "已取消答题，如需答题请刷新页面重新开始。" });
+                    return;
+                  }
+                }
                 setTimeout(() => {
-                  lib.$message.info({ content: `\u5F00\u59CB${isExam2 ? "\u8003\u8BD5" : "\u4F5C\u4E1A"}` });
+                  var _a;
+                  lib.$message.info({ content: `开始${isExam2 ? "考试" : "作业"}` });
                   commonWork(this, {
-                    workerProvider: (opts) => gxkWorkAndExam(workInfo, opts)
+                    workerProvider: (opts) => gxkWorkAndExam(workInfo, opts),
+                    start_delay_seconds: (_a = this.cfg.workDelay) != null ? _a : 3
                   });
                 }, 1e3);
               } else {
-                lib.$message.info({ content: "\u{1F4E2} \u8BF7\u624B\u52A8\u8FDB\u5165\u4F5C\u4E1A/\u8003\u8BD5\uFF0C\u5982\u679C\u672A\u5F00\u59CB\u7B54\u9898\uFF0C\u8BF7\u5C1D\u8BD5\u5237\u65B0\u9875\u9762\u3002", duration: 0 });
+                lib.$message.info({ content: "📢 请手动进入作业/考试，如果未开始答题，请尝试刷新页面。", duration: 0 });
                 CommonProject.scripts.render.methods.pin(this);
               }
             }
@@ -9816,38 +10185,38 @@ ${content}</tr>
         }
       }),
       "smart-study": new lib.Script({
-        name: "\u{1F5A5}\uFE0F \u667A\u6167\u8BFE\u7A0B-\u5B66\u4E60\u811A\u672C",
+        name: "🖥️ 智慧课程-学习脚本",
         matches: [
-          ["\u667A\u6167\u8BFE\u7A0B\u5B66\u4E60\u9875\u9762", "smartcoursestudent.zhihuishu.com/learnPage"],
-          ["\u667A\u6167\u8BFE\u7A0B\u65B0\u57DF\u540D\u5B66\u4E60\u9875\u9762", "ai-smart-course-student-pro.zhihuishu.com/learnPage"],
-          ["\u667A\u6167\u8BFE\u7A0B\u9996\u9875", "smartcoursestudent.zhihuishu.com/singleCourse"],
-          ["\u667A\u6167\u8BFE\u7A0B\u65B0\u57DF\u540D\u8BFE\u7A0B\u9996\u9875", "ai-smart-course-student-pro.zhihuishu.com/singleCourse"]
+          ["智慧课程学习页面", "smartcoursestudent.zhihuishu.com/learnPage"],
+          ["智慧课程新域名学习页面", "ai-smart-course-student-pro.zhihuishu.com/learnPage"],
+          ["智慧课程首页", "smartcoursestudent.zhihuishu.com/singleCourse"],
+          ["智慧课程新域名课程首页", "ai-smart-course-student-pro.zhihuishu.com/singleCourse"]
         ],
         namespace: "zhs.smart.study",
         configs: {
           notes: {
             defaultValue: lib.$ui.notes([
-              "\u638C\u63E1\u5EA6\u548C\u4F5C\u4E1A\u8BF7\u89C6\u9891\u770B\u5B8C\u540E\u81EA\u884C\u624B\u52A8\u8FDB\u5165",
-              "\u4E0D\u8981\u6700\u5C0F\u5316\u6D4F\u89C8\u5668/\u5173\u95ED\u7535\u8111\u5C4F\u5E55\uFF0C\u53EF\u80FD\u5BFC\u81F4\u811A\u672C\u6682\u505C\u3002",
-              "\u4EFB\u610F\u9009\u62E9\u4E00\u4E2A\u7AE0\u8282\uFF0C\u811A\u672C\u4F1A\u81EA\u52A8\u5F80\u4E0B\u5B66\u201C\u5FC5\u5B66\u201D\u8BFE\u7A0B\u3002",
-              "\u8FD0\u884C\u4E2D\u8BF7\u5C06\u6D4F\u89C8\u5668\u7F29\u653E\u8C03\u6574\u81F3\u9002\u5408\u7684\u5927\u5C0F\uFF0C\u907F\u514D\u5143\u7D20\u906E\u6321\uFF0C\u65E0\u6CD5\u70B9\u51FB",
-              "\u4F8B\u5982\uFF1A\u8C03\u6574\u7F29\u653E\u5230 50%\uFF0C\u7136\u540E\u5237\u65B0\u9875\u9762\u5373\u53EF"
+              "掌握度和作业请视频看完后自行手动进入",
+              "不要最小化浏览器/关闭电脑屏幕，可能导致脚本暂停。",
+              "任意选择一个章节，脚本会自动往下学“必学”课程。",
+              "运行中请将浏览器缩放调整至适合的大小，避免元素遮挡，无法点击",
+              "例如：调整缩放到 50%，然后刷新页面即可"
             ]).outerHTML
           },
           switchMode: {
-            label: "\u8DF3\u8F6C\u6A21\u5F0F",
+            label: "跳转模式",
             tag: "select",
             defaultValue: "job",
             options: [
-              ["job", "\u53EA\u8DF3\u8F6C\u5FC5\u5B66\u7AE0\u8282", "\u7AE0\u8282\u540E\u9762\u6709\u5FC5\u5B66\uFF0C\u5E76\u4E14\u5FC5\u5B66\u6570\u91CF\u672A\u5B8C\u6210\u7684\u7AE0\u8282\uFF0C\u5982\u679C\u5168\u90E8\u5B8C\u6210\u5C06\u505C\u6B62\u5B66\u4E60"],
-              ["all", "\u987A\u5E8F\u8DF3\u8F6C"]
+              ["job", "只跳转必学章节", "章节后面有必学，并且必学数量未完成的章节，如果全部完成将停止学习"],
+              ["all", "顺序跳转"]
             ]
           },
           restudy,
           volume,
           definition,
           playbackRate: {
-            label: "\u89C6\u9891\u500D\u901F",
+            label: "视频倍速",
             tag: "select",
             defaultValue: 1,
             options: [
@@ -9869,7 +10238,7 @@ ${content}</tr>
           return {
             start: async () => {
               if (location.href.includes("singleCourse")) {
-                lib.$message.info({ content: "\u8BF7\u70B9\u51FB\u4EFB\u610F\u7AE0\u8282\u5F00\u59CB\u8FDB\u884C\u81EA\u52A8\u5B66\u4E60", duration: 60 });
+                lib.$message.info({ content: "请点击任意章节开始进行自动学习", duration: 60 });
                 return;
               }
               CommonProject.scripts.render.methods.pin(this);
@@ -9877,11 +10246,14 @@ ${content}</tr>
               const getInfos = () => Array.from(document.querySelectorAll(".section-item-collapse-info"));
               const getChapterName = () => {
                 var _a, _b;
-                return (((_a = document.querySelector(".point-title-text")) == null ? void 0 : _a.textContent) || "\u672A\u77E5\u7AE0\u8282") + "-" + (((_b = document.querySelector(".resources-item .active .video-title")) == null ? void 0 : _b.textContent) || "\u672A\u77E5\u5C0F\u8282");
+                return (((_a = document.querySelector(".point-title-text")) == null ? void 0 : _a.textContent) || "未知章节") + "-" + (((_b = document.querySelector(".resources-item .active .video-title")) == null ? void 0 : _b.textContent) || "未知小节");
               };
               const include_jobs = ["video", "book", "other", "text"];
               const getNextJob = () => {
                 const cards = Array.from(document.querySelectorAll(".resources-item"));
+                if (cards.some((card) => card.querySelector(".active")) === false) {
+                  return cards[0];
+                }
                 let target_el;
                 let start2 = false;
                 for (let index = 0; index < cards.length; index++) {
@@ -9918,7 +10290,7 @@ ${content}</tr>
                       total: 1
                     });
                   } else {
-                    const [progress, total] = text.replace("\u5FC5\u5B66", "").trim().split("/").map((s) => parseInt(s));
+                    const [progress, total] = text.replace("必学", "").trim().split("/").map((s) => parseInt(s));
                     if (progress < total) {
                       works.push({ progress, total, info });
                     }
@@ -9957,23 +10329,28 @@ ${content}</tr>
               const doWork = async () => {
                 await lib.$.sleep(5 * 1e3);
                 const next2 = async () => {
-                  var _a, _b;
+                  var _a;
                   const nextJob = getNextJob();
                   if (nextJob) {
-                    const job_title = nextJob.querySelector(".common-text");
-                    if (include_jobs.some((job) => nextJob.getElementsByClassName(job).length > 0)) {
-                      job_title.click();
+                    const nextJobTitle = nextJob.querySelector(".common-text");
+                    document.querySelectorAll(".resources-item .active").forEach((el) => el.classList.remove("active"));
+                    if (include_jobs.some((job) => {
+                      var _a2;
+                      return (_a2 = nextJob.querySelector(".icon-box")) == null ? void 0 : _a2.classList.contains(job);
+                    })) {
+                      nextJobTitle.click();
                       await doWork();
                     } else {
                       const _open = lib.$gm.unsafeWindow.open;
                       lib.$gm.unsafeWindow.open = () => null;
-                      (_a = document.querySelector(".basic-info-video-card-container.active")) == null ? void 0 : _a.classList.remove("active");
-                      job_title.click();
-                      (_b = nextJob.querySelector(".basic-info-video-card-container")) == null ? void 0 : _b.classList.add("active");
+                      nextJobTitle.click();
+                      (_a = nextJob.querySelector(".basic-info-video-card-container")) == null ? void 0 : _a.classList.add("active");
+                      const msg = "链接任务完成，即将自动下一节！";
+                      lib.$message.info(msg);
                       setTimeout(async () => {
                         lib.$gm.unsafeWindow.open = _open;
                         await next2();
-                      }, 1e3);
+                      }, 3e3);
                     }
                     return;
                   }
@@ -9987,14 +10364,14 @@ ${content}</tr>
                 try {
                   const wrapper = document.querySelector(".video-player-wrapper");
                   if (!wrapper || wrapper.style.display === "none") {
-                    throw new Error("\u89C6\u9891\u52A0\u8F7D\u5931\u8D25");
+                    throw new Error("视频加载失败");
                   }
                   await waitForMedia({
                     timeout: 5 * 1e3,
                     filter: (m) => m.src.length !== 0
                   });
                 } catch {
-                  const msg = "\u672A\u627E\u5230\u5B66\u4E60\u89C6\u9891\uFF0C\u5373\u5C06\u81EA\u52A8\u4E0B\u4E00\u8282\uFF01";
+                  const msg = "未找到学习视频，即将自动下一节！";
                   lib.$message.error(msg);
                   $console.error(msg);
                   await lib.$.sleep(3e3);
@@ -10016,8 +10393,8 @@ ${content}</tr>
                     }
                     return state$4.study.currentMedia;
                   } catch (e) {
-                    $console.log("\u89C6\u9891\u52A0\u8F7D\u5931\u8D25\uFF0C\u8BF7\u5C1D\u8BD5\u5237\u65B0\u9875\u9762\uFF01\uFF1A" + e);
-                    lib.$message.error({ content: "\u89C6\u9891\u52A0\u8F7D\u5931\u8D25\uFF0C\u8BF7\u5C1D\u8BD5\u5237\u65B0\u9875\u9762\uFF01\uFF1A" + e, duration: 0 });
+                    $console.log("视频加载失败，请尝试刷新页面！：" + e);
+                    lib.$message.error({ content: "视频加载失败，请尝试刷新页面！：" + e, duration: 0 });
                   }
                 };
                 const video = await set();
@@ -10026,8 +10403,8 @@ ${content}</tr>
                 }
                 playMedia(() => video == null ? void 0 : video.play()).then(() => {
                   const cn = getChapterName();
-                  lib.$message.info({ content: "\u6B63\u5728\u5B66\u4E60\uFF1A" + cn });
-                  $console.log("\u6B63\u5728\u5B66\u4E60\uFF1A" + cn);
+                  lib.$message.info({ content: "正在学习：" + cn });
+                  $console.log("正在学习：" + cn);
                 });
                 video.onpause = async () => {
                   if (!(video == null ? void 0 : video.ended) && state$4.study.stop === false) {
@@ -10036,7 +10413,7 @@ ${content}</tr>
                   }
                 };
                 video.onended = async () => {
-                  lib.$message.info({ content: "\u5373\u5C06\u81EA\u52A8\u8DF3\u8F6C\u4E0B\u4E00\u8282" });
+                  lib.$message.info({ content: "即将自动跳转下一节" });
                   await lib.$.sleep(3e3);
                   await next2();
                 };
@@ -10047,55 +10424,58 @@ ${content}</tr>
         }
       }),
       "smart-work": new lib.Script({
-        name: "\u270D\uFE0F \u667A\u6167\u8BFE\u7A0B-\u4F5C\u4E1A\u811A\u672C",
+        name: "✍️ 智慧课程-作业/掌握度脚本",
         matches: [
-          ["\u667A\u6167\u8BFE\u7A0B\u4F5C\u4E1A\u9875\u9762", "smartcourseexam.zhihuishu.com/ReviewExam"],
-          ["\u667A\u6167\u8BFE\u7A0B-\u638C\u63E1\u63D0\u5347\u9875\u9762", "studentexamcomh5.zhihuishu.com/studentReviewTestOrExam"],
-          ["\u667A\u6167\u8BFE\u7A0B-AI\u52A9\u6559\u638C\u63E1\u5EA6", "fusioncourseh5.zhihuishu.com/exam"],
-          ["\u667A\u6167\u8BFE\u7A0B-\u65B0AI\u52A9\u6559\u638C\u63E1\u5EA6", "studywisdomh5.zhihuishu.com/exam"]
+          ["智慧课程作业页面", "smartcourseexam.zhihuishu.com/ReviewExam"],
+          ["智慧课程-掌握提升页面", "studentexamcomh5.zhihuishu.com/studentReviewTestOrExam"],
+          ["智慧课程-AI助教掌握度", "fusioncourseh5.zhihuishu.com/exam"],
+          ["智慧课程-新AI助教掌握度", "studywisdomh5.zhihuishu.com/exam"]
         ],
         namespace: "zhs.smart.work",
         configs: {
           notes: {
             defaultValue: lib.$ui.notes([
-              "\u81EA\u52A8\u7B54\u9898\u524D\u8BF7\u5728 \u201C\u901A\u7528-\u5168\u5C40\u8BBE\u7F6E\u201D \u4E2D\u8BBE\u7F6E\u9898\u5E93\u914D\u7F6E\u3002",
-              "\u53EF\u4EE5\u642D\u914D \u201C\u901A\u7528-\u5728\u7EBF\u641C\u9898\u201D \u4E00\u8D77\u4F7F\u7528\u3002",
-              "\u591A\u4E2A\u638C\u63E1\u5EA6\u53EF\u4EE5\u91CD\u590D\u4F7F\u7528\u91CD\u65B0\u7B54\u9898\u6309\u94AE\u4EE5\u4FBF\u5FEB\u901F\u5B8C\u6210\u3002",
-              "\u26A0\uFE0F\u5F00\u59CB\u524D\u8BF7\u4ED4\u7EC6\u9605\u8BFB\u4EE5\u4E0B\u4E8B\u9879\uFF1A\u26A0\uFE0F",
-              "\u26A0\uFE0F-\u5982\u679C\u672A\u5F00\u59CB\u7B54\u9898\uFF0C\u8BF7\u5C1D\u8BD5\u5237\u65B0\u9875\u9762\u3002",
-              ["\u26A0\uFE0F-\u7B54\u9898\u4E2D\u8BF7\u52FF\u8FDB\u884C\u4EFB\u4F55\u64CD\u4F5C\uFF0C\u5982\u9700\u6682\u505C\u7B54\u9898", "\u8BF7\u7B49\u5F85\u5168\u90E8\u9898\u76EE\u641C\u7D22\u5B8C\u6210\u5E76\u6267\u884C\u81EA\u52A8\u4FDD\u5B58\u529F\u80FD\u540E\u624D\u80FD\u64CD\u4F5C\u3002"]
+              "自动答题前请在 “通用-全局设置” 中设置题库配置。",
+              "可以搭配 “通用-在线搜题” 一起使用。",
+              "⚠️ 如果没开始答题，请尝试刷新页面。",
+              "⚠️ 禁止一次性打开多个作业/考试页面。",
+              ...remote_required_pages.some((domain2) => location.href.includes(domain2)) ? [] : ["⚠️ 答题中请勿进行任何操作，如需暂停答题", "请等待全部题目搜索完成并执行自动保存功能后才能操作。"]
             ]).outerHTML
+          },
+          workDelay: {
+            label: "作业答题开始时间延迟（秒）",
+            defaultValue: 3,
+            attrs: { type: "number", min: 1, step: 1, max: 10 }
           }
         },
         methods() {
           return {
             start: async () => {
-              await lib.$.sleep(3e3);
+              var _a;
+              CommonProject.scripts.render.methods.pin(this);
               let remotePage;
-              const is_zwd = ["fusioncourseh5.zhihuishu.com", "studywisdomh5.zhihuishu.com"].some(
-                (domain2) => location.href.includes(domain2)
-              );
-              if (is_zwd)
+              const remote_required = remote_required_pages.some((domain2) => location.href.includes(domain2));
+              remote_required ? await waitForElement(".exam-item") : await waitForElement(".questionContent");
+              if (remote_required)
                 ;
               else {
                 remotePage = await BackgroundProject.scripts.dev.methods.getRemotePlaywrightCurrentPage();
                 if (!remotePage) {
                   return $playwright.showError();
                 }
+                $render.moveToEdge();
+                lib.$message.warn({ content: "答题完毕之前请勿操作页面！", duration: 0 });
               }
-              $render.moveToEdge();
-              lib.$message.warn({ content: "\u5373\u5C06\u5F00\u59CB\u7B54\u9898\uFF0C\u7B54\u9898\u5B8C\u6BD5\u4E4B\u524D\u8BF7\u52FF\u64CD\u4F5C\u9875\u9762\uFF01", duration: 0 });
-              setTimeout(() => {
-                commonWork(this, {
-                  workerProvider: (opts) => {
-                    if (is_zwd) {
-                      return fusioncourseWork(remotePage, opts);
-                    } else {
-                      return smartWork(remotePage, opts);
-                    }
+              commonWork(this, {
+                workerProvider: (opts) => {
+                  if (remote_required) {
+                    return fusioncourseWork(remotePage, opts);
+                  } else {
+                    return smartWork(remotePage, opts);
                   }
-                });
-              }, 3e3);
+                },
+                start_delay_seconds: (_a = this.cfg.workDelay) != null ? _a : 3
+              });
             }
           };
         },
@@ -10109,12 +10489,12 @@ ${content}</tr>
         }
       }),
       "xnk-study": new lib.Script({
-        name: "\u{1F5A5}\uFE0F \u6821\u5185\u8BFE\uFF08\u7FFB\u8F6C\u8BFE\uFF09-\u5B66\u4E60\u811A\u672C",
-        matches: [["\u6821\u5185\u8BFE\u5B66\u4E60\u9875\u9762", "zhihuishu.com/aidedteaching/sourceLearning"]],
+        name: "🖥️ 校内课（翻转课）-学习脚本",
+        matches: [["校内课学习页面", "zhihuishu.com/aidedteaching/sourceLearning"]],
         namespace: "zhs.xnk.study",
         configs: {
           notes: {
-            defaultValue: lib.$ui.notes(["\u7AE0\u8282\u6D4B\u8BD5\u8BF7\u5927\u5BB6\u89C2\u770B\u5B8C\u89C6\u9891\u540E\u624B\u52A8\u6253\u5F00\u3002", "\u6B64\u8BFE\u7A0B\u4E0D\u80FD\u4F7F\u7528\u500D\u901F\u3002"]).outerHTML
+            defaultValue: lib.$ui.notes(["章节测试请大家观看完视频后手动打开。", "此课程不能使用倍速。"]).outerHTML
           },
           restudy,
           volume
@@ -10123,11 +10503,11 @@ ${content}</tr>
           CommonProject.scripts.render.methods.pin(this);
           const finish = () => {
             lib.$modal.alert({
-              content: "\u68C0\u6D4B\u5230\u5F53\u524D\u89C6\u9891\u5168\u90E8\u64AD\u653E\u5B8C\u6BD5\uFF0C\u5982\u679C\u8FD8\u6709\u672A\u5B8C\u6210\u7684\u89C6\u9891\u8BF7\u5237\u65B0\u91CD\u8BD5\uFF0C\u6216\u8005\u6253\u5F00\u590D\u4E60\u6A21\u5F0F\u3002"
+              content: "检测到当前视频全部播放完毕，如果还有未完成的视频请刷新重试，或者打开复习模式。"
             });
             CommonProject.scripts.settings.methods.notificationBySetting(
-              "\u68C0\u6D4B\u5230\u5F53\u524D\u89C6\u9891\u5168\u90E8\u64AD\u653E\u5B8C\u6BD5\uFF0C\u5982\u679C\u8FD8\u6709\u672A\u5B8C\u6210\u7684\u89C6\u9891\u8BF7\u5237\u65B0\u91CD\u8BD5\uFF0C\u6216\u8005\u6253\u5F00\u590D\u4E60\u6A21\u5F0F\u3002",
-              { duration: 0, extraTitle: "\u77E5\u9053\u667A\u6167\u6811\u5B66\u4E60\u811A\u672C" }
+              "检测到当前视频全部播放完毕，如果还有未完成的视频请刷新重试，或者打开复习模式。",
+              { duration: 0, extraTitle: "知道智慧树学习脚本" }
             );
           };
           this.onConfigChange("volume", (curr) => {
@@ -10159,10 +10539,10 @@ ${content}</tr>
               clearInterval(interval);
               if (document.querySelector("#mediaPlayer")) {
                 (_a = document.querySelector(".file-item.active")) == null ? void 0 : _a.scrollIntoView();
-                const name = ((_b = next2.querySelector("#sourceTit")) == null ? void 0 : _b.textContent) || "\u672A\u77E5\u89C6\u9891";
-                lib.$message.info("\u6B63\u5728\u5B66\u4E60\uFF1A" + name);
+                const name = ((_b = next2.querySelector("#sourceTit")) == null ? void 0 : _b.textContent) || "未知视频";
+                lib.$message.info("正在学习：" + name);
                 watchXnk({ volume: this.cfg.volume }, () => {
-                  lib.$message.info("\u89C6\u9891\u5B8C\u6210\u64AD\u653E\uFF0C\u6B63\u5728\u81EA\u52A8\u8DF3\u8F6C\u4E0B\u4E00\u8282\uFF01");
+                  lib.$message.info("视频完成播放，正在自动跳转下一节！");
                   setTimeout(() => {
                     const next22 = nextElement();
                     if (next22)
@@ -10171,7 +10551,7 @@ ${content}</tr>
                 });
               } else {
                 setTimeout(() => {
-                  const msg = "\u672A\u627E\u5230\u5B66\u4E60\u89C6\u9891\uFF0C\u5373\u5C06\u81EA\u52A8\u4E0B\u4E00\u8282\uFF01";
+                  const msg = "未找到学习视频，即将自动下一节！";
                   lib.$message.warn(msg);
                   $console.warn(msg);
                   const next22 = nextElement();
@@ -10190,10 +10570,10 @@ ${content}</tr>
         }
       }),
       "xnk-work": new lib.Script({
-        name: "\u270D\uFE0F \u6821\u5185\u8BFE-\u4F5C\u4E1A\u8003\u8BD5\u811A\u672C",
+        name: "✍️ 校内课-作业考试脚本",
         matches: [
-          ["\u6821\u5185\u8BFE\u4F5C\u4E1A\u9875\u9762", "zhihuishu.com/atHomeworkExam/stu/homeworkQ/exerciseList"],
-          ["\u6821\u5185\u8BFE\u8003\u8BD5\u9875\u9762", "zhihuishu.com/atHomeworkExam/stu/examQ/examexercise"]
+          ["校内课作业页面", "zhihuishu.com/atHomeworkExam/stu/homeworkQ/exerciseList"],
+          ["校内课考试页面", "zhihuishu.com/atHomeworkExam/stu/examQ/examexercise"]
         ],
         namespace: "zhs.xnk.work",
         configs: { notes: workNotes },
@@ -10204,37 +10584,37 @@ ${content}</tr>
         }
       }),
       "wisdom-study": new lib.Script({
-        name: "\u{1F5A5}\uFE0F \u65B0\u667A\u6167\u5B66\u4E60-\u5B66\u4E60\u811A\u672C",
-        matches: [["2025-9\u6708\u65B0\u667A\u6167\u5B66\u4E60\u9875\u9762", "studywisdomh5.zhihuishu.com/study/index"]],
+        name: "🖥️ 新智慧学习-学习脚本",
+        matches: [["2025-9月新智慧学习页面", "studywisdomh5.zhihuishu.com/study/index"]],
         namespace: "zhs.wisdom.study",
         configs: {
           notes: {
             defaultValue: lib.$ui.notes([
-              "\u638C\u63E1\u5EA6\u548C\u4F5C\u4E1A\u8BF7\u89C6\u9891\u770B\u5B8C\u540E\u81EA\u884C\u624B\u52A8\u8FDB\u5165",
-              "\u4E0D\u8981\u6700\u5C0F\u5316\u6D4F\u89C8\u5668/\u5173\u95ED\u7535\u8111\u5C4F\u5E55\uFF0C\u53EF\u80FD\u5BFC\u81F4\u811A\u672C\u6682\u505C\u3002",
-              "\u8BF7\u4F7F\u7528\u65F6\u5173\u95ED\u5361\u5DF4\u65AF\u57FA\u8F6F\u4EF6\uFF0C\u5426\u5219\u4F1A\u5BFC\u81F4\u65E0\u6CD5\u8FD0\u884C\u3002",
-              "\u8FD0\u884C\u4E2D\u8BF7\u5C06\u6D4F\u89C8\u5668\u7F29\u653E\u8C03\u6574\u81F3\u9002\u5408\u7684\u5927\u5C0F\uFF0C\u907F\u514D\u5143\u7D20\u906E\u6321\uFF0C\u65E0\u6CD5\u70B9\u51FB",
-              "\u4F8B\u5982\uFF1A\u8C03\u6574\u7F29\u653E\u5230 50%\uFF0C\u7136\u540E\u5237\u65B0\u9875\u9762\u5373\u53EF"
+              "掌握度和作业请视频看完后自行手动进入",
+              "不要最小化浏览器/关闭电脑屏幕，可能导致脚本暂停。",
+              "请使用时关闭卡巴斯基软件，否则会被检测出异常脚本。",
+              "运行中请将浏览器缩放调整至适合的大小，避免元素遮挡，无法点击",
+              "例如：调整缩放到 50%，然后刷新页面即可"
             ]).outerHTML
           },
           restudy,
           skipStudyTimeWarnDialog: {
-            label: "\u5FFD\u7565\u4E60\u60EF\u5206\u5F39\u7A97",
+            label: "忽略习惯分弹窗",
             attrs: {
-              title: "\u5982\u679C\u8BFE\u7A0B\u6709\u4E60\u60EF\u5206\u9700\u8981\u81EA\u884C\u63A7\u5236\u5B66\u4E60\u65F6\u957F\uFF0C\u5982\u679C\u5FFD\u7565\u4E60\u60EF\u5206\u63D0\u793A\uFF0C\u5219\u53EF\u80FD\u6CA1\u6709\u4E60\u60EF\u5206\u3002",
+              title: "如果课程有习惯分需要自行控制学习时长，如果忽略习惯分提示，则可能没有习惯分。",
               type: "checkbox"
             },
             defaultValue: false
           },
           reloadWhenError: {
-            label: "\u89C6\u9891\u9ED1\u5C4F\u65F6\u81EA\u52A8\u5237\u65B0",
-            attrs: { type: "checkbox", title: "\u5F53\u89C6\u9891\u51FA\u73B0\u52A0\u8F7D\u5931\u8D25\uFF0C\u6216\u8005\u9ED1\u5C4F\u7B49\u5F02\u5E38\u65F6\uFF0C\u81EA\u52A8\u5237\u65B0\u9875\u97623\u6B21\u5C1D\u8BD5\u4FEE\u590D" },
+            label: "视频黑屏时自动刷新",
+            attrs: { type: "checkbox", title: "当视频出现加载失败，或者黑屏等异常时，自动刷新页面3次尝试修复" },
             defaultValue: true
           },
           volume,
           definition,
           playbackRate: {
-            label: "\u89C6\u9891\u500D\u901F",
+            label: "视频倍速",
             tag: "select",
             defaultValue: 1,
             options: [
@@ -10249,7 +10629,7 @@ ${content}</tr>
           const processor = new WishdomH5();
           const getChapterName = () => {
             var _a;
-            return ((_a = document.querySelector(".video-study-wrapper-title")) == null ? void 0 : _a.textContent) || "\u672A\u77E5\u7AE0\u8282";
+            return ((_a = document.querySelector(".video-study-wrapper-title")) == null ? void 0 : _a.textContent) || "未知章节";
           };
           this.onConfigChange("volume", (curr) => {
             state$4.study.currentMedia && (state$4.study.currentMedia.volume = curr);
@@ -10279,7 +10659,7 @@ ${content}</tr>
             if (nextJob) {
               if (!this.cfg.skipStudyTimeWarnDialog && hasStudyTimeWarnDialog()) {
                 lib.$message.warn({
-                  content: "\u68C0\u6D4B\u5230\u4E60\u60EF\u5206\u5F39\u7A97\uFF0C\u5F53\u5929\u5B66\u4E60\u65F6\u95F4\u5DF2\u6EE1\uFF0C\u5982\u9700\u7EE7\u7EED\u5B66\u4E60\uFF0C\u8BF7\u624B\u52A8\u5173\u95ED\u540E\uFF0C\u5237\u65B0\u9875\u9762\u91CD\u65B0\u8FD0\u884C\u811A\u672C\uFF01\uFF08\u5982\u60F3\u5F3A\u5236\u5B66\u4E60\u8BF7\u524D\u5F80\u811A\u672C\u8BBE\u7F6E\u5FFD\u7565\u5F39\u7A97\uFF09",
+                  content: "检测到习惯分弹窗，当天学习时间已满，如需继续学习，请手动关闭后，刷新页面重新运行脚本！（如想强制学习请前往脚本设置忽略弹窗）",
                   duration: 0
                 });
                 return;
@@ -10299,7 +10679,7 @@ ${content}</tr>
                 var _a;
                 if (document.querySelector(".masterylevel-body")) {
                   (_a = processor.remotePage) == null ? void 0 : _a.click(".header-box .close-box");
-                  lib.$message.info("\u638C\u63E1\u5EA6\u9875\u9762\u5DF2\u5173\u95ED\uFF0C\u5373\u5C06\u7EE7\u7EED\u5B66\u4E60\uFF01");
+                  lib.$message.info("掌握度页面已关闭，即将继续学习！");
                 }
                 setTimeout(check, 3e3);
               };
@@ -10310,7 +10690,7 @@ ${content}</tr>
             return !!Array.from(document.querySelectorAll(".el-overlay .content")).find(
               (el) => {
                 var _a;
-                return (_a = el.textContent) == null ? void 0 : _a.includes("\u4FDD\u6301\u826F\u597D\u7684\u5B66\u4E60\u4E60\u60EF");
+                return (_a = el.textContent) == null ? void 0 : _a.includes("保持良好的学习习惯");
               }
             );
           };
@@ -10321,7 +10701,7 @@ ${content}</tr>
                 const dialog = Array.from(document.querySelectorAll(".el-overlay")).find(
                   (el) => {
                     var _a2;
-                    return (_a2 = el.textContent) == null ? void 0 : _a2.includes("\u4FDD\u6301\u826F\u597D\u7684\u5B66\u4E60\u4E60\u60EF");
+                    return (_a2 = el.textContent) == null ? void 0 : _a2.includes("保持良好的学习习惯");
                   }
                 );
                 if (dialog) {
@@ -10377,20 +10757,20 @@ ${content}</tr>
           setInterval(() => {
             fixProcessBar2();
           }, 1e3);
-          lib.$message.success({ content: "\u5373\u5C06\u5F00\u59CB\u81EA\u52A8\u5B66\u4E60\uFF01" });
+          lib.$message.success({ content: "即将开始自动学习！" });
           const reload = async (e) => {
             $console.error(e);
             if (this.cfg.reloadWhenError) {
-              const msg = "\u89C6\u9891\u52A0\u8F7D\u5931\u8D25\uFF0C\u5373\u5C06\u5237\u65B0\u9875\u9762\u3002";
+              const msg = "视频加载失败，即将刷新页面。";
               const reload_count = await lib.$store.getTab("reload-count");
               if (reload_count && reload_count > 3) {
-                const msg2 = "\u89C6\u9891\u52A0\u8F7D\u5931\u8D25/\u9ED1\u5C4F\u5BFC\u81F4\u91CD\u65B0\u52A0\u8F7D\u9875\u9762\u6B21\u6570\u8D85\u8FC73\u6B21\uFF0C\u8BF7\u5C1D\u8BD5\u5173\u95ED\u9875\u9762\u91CD\u65B0\u6253\u5F00\uFF0C\u6216\u8005\u68C0\u67E5\u7F51\u7EDC\u8FDE\u63A5\uFF01";
+                const msg2 = "视频加载失败/黑屏导致重新加载页面次数超过3次，请尝试关闭页面重新打开，或者检查网络连接！";
                 await lib.$store.setTab("reload-count", 0);
                 lib.$message.error({ content: msg2, duration: 0 });
                 $console.log(msg2);
                 CommonProject.scripts.settings.methods.notificationBySetting(msg2, {
                   duration: 0,
-                  extraTitle: "\u77E5\u9053\u667A\u6167\u6811\u5B66\u4E60\u811A\u672C"
+                  extraTitle: "知道智慧树学习脚本"
                 });
                 return;
               }
@@ -10401,7 +10781,7 @@ ${content}</tr>
                 location.reload();
               }, 3e3);
             } else {
-              const msg = "\u89C6\u9891\u52A0\u8F7D\u5931\u8D25\uFF0C\u5373\u5C06\u8DF3\u8FC7\u3002";
+              const msg = "视频加载失败，即将跳过。";
               lib.$message.error(msg);
               $console.log(msg);
               next2();
@@ -10427,7 +10807,7 @@ ${content}</tr>
                 reload(e);
               }
             };
-            lib.$message.info("\u5F00\u59CB\u64AD\u653E");
+            lib.$message.info("开始播放");
             try {
               const media = await waitForMedia({
                 timeout: 10 * 1e3,
@@ -10447,14 +10827,14 @@ ${content}</tr>
             const videoCheckInterval = setInterval(async () => {
               if (!(video == null ? void 0 : video.isConnected)) {
                 clearInterval(videoCheckInterval);
-                lib.$message.info({ content: "\u68C0\u6D4B\u5230\u89C6\u9891\u5207\u6362\u4E2D..." });
+                lib.$message.info({ content: "检测到视频切换中..." });
                 doWork();
               }
             }, 3e3);
             playMedia(() => video == null ? void 0 : video.play()).then(() => {
               const cn = getChapterName();
-              lib.$message.info({ content: "\u6B63\u5728\u5B66\u4E60\uFF1A" + cn });
-              $console.log("\u6B63\u5728\u5B66\u4E60\uFF1A" + cn);
+              lib.$message.info({ content: "正在学习：" + cn });
+              $console.log("正在学习：" + cn);
             });
             video.onpause = async () => {
               if (!(video == null ? void 0 : video.isConnected))
@@ -10467,8 +10847,8 @@ ${content}</tr>
             video.onended = async () => {
               if (!(video == null ? void 0 : video.isConnected))
                 return;
-              lib.$message.info("\u5373\u5C06\u81EA\u52A8\u8DF3\u8F6C\u4E0B\u4E00\u8282");
-              $console.info("\u5373\u5C06\u81EA\u52A8\u8DF3\u8F6C\u4E0B\u4E00\u8282");
+              lib.$message.info("即将自动跳转下一节");
+              $console.info("即将自动跳转下一节");
               clearInterval(videoCheckInterval);
               await lib.$.sleep(3e3);
               await next2();
@@ -10478,26 +10858,26 @@ ${content}</tr>
         }
       }),
       hike: new lib.Script({
-        name: "\u{1F5A5}\uFE0F \u6559\u5B66\u7A7A\u95F4-AI\u667A\u6167\u8BFE\u7A0B-\u5B66\u4E60\u811A\u672C",
+        name: "🖥️ 教学空间-AI智慧课程-学习脚本",
         matches: [
-          ["\u5B66\u4E60\u9996\u9875", "hike-teaching-center.polymas.com/stu-hike/agent-course-hike/ai-course-center"],
-          ["\u5B66\u4E60\u9875\u9762", "tools-hike/studentStudyResource"]
+          ["学习首页", "hike-teaching-center.polymas.com/stu-hike/agent-course-hike/ai-course-center"],
+          ["学习页面", "tools-hike/studentStudyResource"]
         ],
         namespace: "zhs.hike.study",
         configs: {
           notes: {
-            defaultValue: lib.$ui.notes(["\u8BF7\u624B\u52A8\u8FDB\u5165\u89C6\u9891\u3001\u4F5C\u4E1A\u3001\u8003\u8BD5\u9875\u9762\uFF0C\u811A\u672C\u4F1A\u81EA\u52A8\u8FD0\u884C\u3002"]).outerHTML
+            defaultValue: lib.$ui.notes(["请手动进入视频、作业、考试页面，脚本会自动运行。"]).outerHTML
           },
           restudy,
           reloadWhenError: {
-            label: "\u89C6\u9891\u9ED1\u5C4F\u65F6\u81EA\u52A8\u5237\u65B0",
-            attrs: { type: "checkbox", title: "\u5F53\u89C6\u9891\u51FA\u73B0\u52A0\u8F7D\u5931\u8D25\uFF0C\u6216\u8005\u9ED1\u5C4F\u7B49\u5F02\u5E38\u65F6\uFF0C\u81EA\u52A8\u5237\u65B0\u9875\u97623\u6B21\u5C1D\u8BD5\u4FEE\u590D" },
+            label: "视频黑屏时自动刷新",
+            attrs: { type: "checkbox", title: "当视频出现加载失败，或者黑屏等异常时，自动刷新页面3次尝试修复" },
             defaultValue: true
           },
           volume,
           definition,
           playbackRate: {
-            label: "\u89C6\u9891\u500D\u901F",
+            label: "视频倍速",
             tag: "select",
             defaultValue: 1,
             options: [
@@ -10510,7 +10890,7 @@ ${content}</tr>
         async oncomplete(...args) {
           CommonProject.scripts.render.methods.pin(this);
           if (location.href.includes("stu-hike/agent-course-hike/ai-course-center")) {
-            lib.$message.info({ content: "\u8BF7\u624B\u52A8\u8FDB\u5165\u89C6\u9891\u3001\u4F5C\u4E1A\u3001\u8003\u8BD5\u9875\u9762\uFF0C\u811A\u672C\u4F1A\u81EA\u52A8\u8FD0\u884C\u3002", duration: 60 });
+            lib.$message.info({ content: "请手动进入视频、作业、考试页面，脚本会自动运行。", duration: 60 });
             return;
           }
           const processor = new Hike();
@@ -10530,7 +10910,7 @@ ${content}</tr>
           });
           const getChapterName = () => {
             var _a, _b;
-            return ((_b = (_a = document.querySelector(".active-file")) == null ? void 0 : _a.textContent) == null ? void 0 : _b.trim()) || "\u672A\u77E5\u7AE0\u8282";
+            return ((_b = (_a = document.querySelector(".active-file")) == null ? void 0 : _a.textContent) == null ? void 0 : _b.trim()) || "未知章节";
           };
           const next2 = async () => {
             const nextJob = processor.getNext({ next: true, restudy: this.cfg.restudy });
@@ -10559,20 +10939,20 @@ ${content}</tr>
           setInterval(() => {
             fixProcessBar();
           }, 1e3);
-          lib.$message.success({ content: "\u5373\u5C06\u5F00\u59CB\u81EA\u52A8\u5B66\u4E60\uFF01" });
+          lib.$message.success({ content: "即将开始自动学习！" });
           const reload = async (e) => {
             $console.error(e);
             if (this.cfg.reloadWhenError) {
-              const msg = "\u89C6\u9891\u52A0\u8F7D\u5931\u8D25\uFF0C\u5373\u5C06\u5237\u65B0\u9875\u9762\u3002";
+              const msg = "视频加载失败，即将刷新页面。";
               const reload_count = await lib.$store.getTab("reload-count");
               if (reload_count && reload_count > 3) {
-                const msg2 = "\u89C6\u9891\u52A0\u8F7D\u5931\u8D25/\u9ED1\u5C4F\u5BFC\u81F4\u91CD\u65B0\u52A0\u8F7D\u9875\u9762\u6B21\u6570\u8D85\u8FC73\u6B21\uFF0C\u8BF7\u5C1D\u8BD5\u5173\u95ED\u9875\u9762\u91CD\u65B0\u6253\u5F00\uFF0C\u6216\u8005\u68C0\u67E5\u7F51\u7EDC\u8FDE\u63A5\uFF01";
+                const msg2 = "视频加载失败/黑屏导致重新加载页面次数超过3次，请尝试关闭页面重新打开，或者检查网络连接！";
                 await lib.$store.setTab("reload-count", 0);
                 lib.$message.error({ content: msg2, duration: 0 });
                 $console.log(msg2);
                 CommonProject.scripts.settings.methods.notificationBySetting(msg2, {
                   duration: 0,
-                  extraTitle: "\u77E5\u9053\u667A\u6167\u6811\u5B66\u4E60\u811A\u672C"
+                  extraTitle: "知道智慧树学习脚本"
                 });
                 return;
               }
@@ -10583,7 +10963,7 @@ ${content}</tr>
                 location.reload();
               }, 3e3);
             } else {
-              const msg = "\u89C6\u9891\u52A0\u8F7D\u5931\u8D25\uFF0C\u5373\u5C06\u8DF3\u8FC7\u3002";
+              const msg = "视频加载失败，即将跳过。";
               lib.$message.error(msg);
               $console.log(msg);
               next2();
@@ -10593,7 +10973,7 @@ ${content}</tr>
             var _a, _b, _c;
             await waitForCaptcha();
             if (!((_c = (_b = (_a = document.querySelector(".active-file")) == null ? void 0 : _a.parentElement) == null ? void 0 : _b.parentElement) == null ? void 0 : _c.querySelector(".icon-movie"))) {
-              lib.$message.warn("\u5F53\u524D\u7AE0\u8282\u4E0D\u652F\u6301\u5B66\u4E60\uFF0C\u5373\u5C06\u8DF3\u8F6C\u4E0B\u4E00\u8282");
+              lib.$message.warn("当前章节不支持学习，即将跳转下一节");
               await lib.$.sleep(3e3);
               await next2();
               return;
@@ -10616,7 +10996,7 @@ ${content}</tr>
                 reload(e);
               }
             };
-            lib.$message.info("\u5F00\u59CB\u64AD\u653E");
+            lib.$message.info("开始播放");
             try {
               const media = await waitForMedia({
                 timeout: 10 * 1e3,
@@ -10636,14 +11016,14 @@ ${content}</tr>
             const videoCheckInterval = setInterval(async () => {
               if (!(video == null ? void 0 : video.isConnected)) {
                 clearInterval(videoCheckInterval);
-                lib.$message.info({ content: "\u68C0\u6D4B\u5230\u89C6\u9891\u5207\u6362\u4E2D..." });
+                lib.$message.info({ content: "检测到视频切换中..." });
                 doWork();
               }
             }, 3e3);
             playMedia(() => video == null ? void 0 : video.play()).then(() => {
               const cn = getChapterName();
-              lib.$message.info({ content: "\u6B63\u5728\u5B66\u4E60\uFF1A" + cn });
-              $console.log("\u6B63\u5728\u5B66\u4E60\uFF1A" + cn);
+              lib.$message.info({ content: "正在学习：" + cn });
+              $console.log("正在学习：" + cn);
             });
             video.onpause = async () => {
               if (!(video == null ? void 0 : video.isConnected))
@@ -10656,14 +11036,38 @@ ${content}</tr>
             video.onended = async () => {
               if (!(video == null ? void 0 : video.isConnected))
                 return;
-              lib.$message.info("\u5373\u5C06\u81EA\u52A8\u8DF3\u8F6C\u4E0B\u4E00\u8282");
-              $console.info("\u5373\u5C06\u81EA\u52A8\u8DF3\u8F6C\u4E0B\u4E00\u8282");
+              lib.$message.info("即将自动跳转下一节");
+              $console.info("即将自动跳转下一节");
               clearInterval(videoCheckInterval);
               await lib.$.sleep(3e3);
               await next2();
             };
           };
           doWork();
+        }
+      }),
+      "hike-work": new lib.Script({
+        matches: [["AI教学中心-作业任务页面", "/stu-hike/stuHomeworkDo"]],
+        name: "✍️ 教学空间-AI智慧课程-作业考试脚本",
+        namespace: "zhs.hike.work",
+        configs: {
+          notes: workNotes,
+          workDelay: {
+            label: "作业答题开始时间延迟（秒）",
+            defaultValue: 3,
+            attrs: { type: "number", min: 1, step: 1, max: 10 }
+          }
+        },
+        async oncomplete() {
+          var _a;
+          CommonProject.scripts.render.methods.pin(this);
+          await waitForElement(".q_main");
+          commonWork(this, {
+            workerProvider: (opts) => {
+              return hikeWork(void 0, opts);
+            },
+            start_delay_seconds: (_a = this.cfg.workDelay) != null ? _a : 3
+          });
         }
       })
     }
@@ -10672,16 +11076,16 @@ ${content}</tr>
     const reload = async (e) => {
       $console.error(e);
       if (options.reloadWhenError) {
-        const msg = "\u89C6\u9891\u52A0\u8F7D\u5931\u8D25\uFF0C\u5373\u5C06\u5237\u65B0\u9875\u9762\u3002";
+        const msg = "视频加载失败，即将刷新页面。";
         const reload_count = await lib.$store.getTab("reload-count");
         if (reload_count && reload_count > 3) {
-          const msg2 = "\u89C6\u9891\u52A0\u8F7D\u5931\u8D25\u5BFC\u81F4\u91CD\u65B0\u52A0\u8F7D\u9875\u9762\u6B21\u6570\u8D85\u8FC73\u6B21\uFF0C\u8BF7\u5C1D\u8BD5\u5173\u95ED\u9875\u9762\u91CD\u65B0\u6253\u5F00\uFF0C\u6216\u8005\u68C0\u67E5\u7F51\u7EDC\u8FDE\u63A5\uFF01";
+          const msg2 = "视频加载失败导致重新加载页面次数超过3次，请尝试关闭页面重新打开，或者检查网络连接！";
           await lib.$store.setTab("reload-count", 0);
           lib.$message.error({ content: msg2, duration: 0 });
           $console.log(msg2);
           CommonProject.scripts.settings.methods.notificationBySetting(msg2, {
             duration: 0,
-            extraTitle: "\u77E5\u9053\u667A\u6167\u6811\u5B66\u4E60\u811A\u672C"
+            extraTitle: "知道智慧树学习脚本"
           });
           return;
         }
@@ -10692,7 +11096,7 @@ ${content}</tr>
           actions.reload();
         }, 5e3);
       } else {
-        const msg = "\u89C6\u9891\u52A0\u8F7D\u5931\u8D25\uFF0C\u5373\u5C06\u8DF3\u8FC7\u3002";
+        const msg = "视频加载失败，即将跳过。";
         lib.$message.error(msg);
         $console.log(msg);
         actions.onended({ next: true });
@@ -10717,23 +11121,24 @@ ${content}</tr>
         return await reload(e);
       }
     };
-    lib.$message.info("\u5F00\u59CB\u64AD\u653E");
-    await lib.$.sleep(1e3);
+    lib.$message.info("开始播放");
     try {
       const media = await waitForMedia({ timeout: 10 * 1e3 });
+      media.volume = options.volume;
       media.pause();
       fixProcessBar();
     } catch (e) {
       return await reload(e);
     }
+    await lib.$.sleep(1e3);
     const video = await set();
     if (!video) {
-      return await reload("\u89C6\u9891\u52A0\u8F7D\u5931\u8D25");
+      return await reload("视频加载失败");
     }
     const videoCheckInterval = setInterval(async () => {
       if ((video == null ? void 0 : video.isConnected) === false) {
         clearInterval(videoCheckInterval);
-        lib.$message.info({ content: "\u68C0\u6D4B\u5230\u89C6\u9891\u5207\u6362\u4E2D..." });
+        lib.$message.info({ content: "检测到视频切换中..." });
         actions.onended({ next: false });
       }
     }, 3e3);
@@ -10773,12 +11178,12 @@ ${content}</tr>
       if (lib.$el(".yidun_popup")) {
         update(true);
         if (modal2 === void 0) {
-          modal2 = lib.$modal.alert({ content: "\u5F53\u524D\u68C0\u6D4B\u5230\u9A8C\u8BC1\u7801\uFF0C\u8BF7\u8F93\u5165\u540E\u65B9\u53EF\u7EE7\u7EED\u8FD0\u884C\u3002" });
+          modal2 = lib.$modal.alert({ content: "当前检测到验证码，请输入后方可继续运行。" });
         }
         if (!notified) {
           notified = true;
           CommonProject.scripts.settings.methods.notificationBySetting(
-            "\u667A\u6167\u6811\u811A\u672C\uFF1A\u5F53\u524D\u68C0\u6D4B\u5230\u9A8C\u8BC1\u7801\uFF0C\u8BF7\u8F93\u5165\u540E\u65B9\u53EF\u7EE7\u7EED\u8FD0\u884C\u3002",
+            "智慧树脚本：当前检测到验证码，请输入后方可继续运行。",
             { duration: 0 }
           );
         }
@@ -10794,9 +11199,9 @@ ${content}</tr>
   function waitForCaptcha() {
     const popup = getPopupCaptcha();
     if (popup) {
-      const message2 = lib.$message.warn({ content: "\u5F53\u524D\u68C0\u6D4B\u5230\u9A8C\u8BC1\u7801\uFF0C\u8BF7\u8F93\u5165\u540E\u65B9\u53EF\u7EE7\u7EED\u8FD0\u884C\u3002", duration: 0 });
+      const message2 = lib.$message.warn({ content: "当前检测到验证码，请输入后方可继续运行。", duration: 0 });
       CommonProject.scripts.settings.methods.notificationBySetting(
-        "\u667A\u6167\u6811\u811A\u672C\uFF1A\u5F53\u524D\u68C0\u6D4B\u5230\u9A8C\u8BC1\u7801\uFF0C\u8BF7\u8F93\u5165\u540E\u65B9\u53EF\u7EE7\u7EED\u8FD0\u884C\u3002",
+        "智慧树脚本：当前检测到验证码，请输入后方可继续运行。",
         { duration: 0 }
       );
       return new Promise((resolve, reject) => {
@@ -10831,7 +11236,7 @@ ${content}</tr>
     const titleTransform = (_, index) => {
       var _a2;
       const div = lib.h("div");
-      div.innerHTML = ((_a2 = allExamParts[index]) == null ? void 0 : _a2.name) || "\u9898\u76EE\u8BFB\u53D6\u5931\u8D25";
+      div.innerHTML = ((_a2 = allExamParts[index]) == null ? void 0 : _a2.name) || "题目读取失败";
       return removeRedundantWords(
         optimizationElementWithImage(div, true).innerText || "",
         redundanceWordsText.split("\n")
@@ -10867,20 +11272,20 @@ ${content}</tr>
             });
           });
         } else {
-          throw new Error("\u9898\u76EE\u4E3A\u7A7A\uFF0C\u8BF7\u67E5\u770B\u9898\u76EE\u662F\u5426\u4E3A\u7A7A\uFF0C\u6216\u8005\u5FFD\u7565\u6B64\u9898");
+          throw new Error("题目为空，请查看题目是否为空，或者忽略此题");
         }
       },
       work: {
         type(ctx) {
           var _a2, _b2, _c2, _d;
           const type = (_d = (_c2 = (_b2 = (_a2 = ctx.elements.title[0].parentElement) == null ? void 0 : _a2.parentElement) == null ? void 0 : _b2.querySelector(".subject_type")) == null ? void 0 : _c2.textContent) == null ? void 0 : _d.trim();
-          if (type == null ? void 0 : type.includes("\u5355\u9009\u9898")) {
+          if (type == null ? void 0 : type.includes("单选题")) {
             return "single";
-          } else if (type == null ? void 0 : type.includes("\u591A\u9009\u9898")) {
+          } else if (type == null ? void 0 : type.includes("多选题")) {
             return "multiple";
-          } else if (type == null ? void 0 : type.includes("\u5224\u65AD\u9898")) {
+          } else if (type == null ? void 0 : type.includes("判断题")) {
             return "judgement";
-          } else if (type == null ? void 0 : type.includes("\u586B\u7A7A\u9898")) {
+          } else if (type == null ? void 0 : type.includes("填空题")) {
             return "completion";
           } else {
             return void 0;
@@ -10928,7 +11333,7 @@ ${content}</tr>
       if (worker.isClose === true) {
         return;
       }
-      lib.$message.success({ content: `\u7B54\u9898\u5B8C\u6210\uFF0C\u5C06\u7B49\u5F85 ${stopSecondWhenFinish} \u79D2\u540E\u8FDB\u884C\u4FDD\u5B58\u6216\u63D0\u4EA4\u3002` });
+      lib.$message.success({ content: `答题完成，将等待 ${stopSecondWhenFinish} 秒后进行保存或提交。` });
       await lib.$.sleep(stopSecondWhenFinish * 1e3);
       if (worker.isClose === true) {
         return;
@@ -10938,7 +11343,7 @@ ${content}</tr>
           return;
         }
         const modal2 = lib.$modal.alert({
-          content: "\u6B63\u5728\u4FDD\u5B58\u9898\u76EE\u4E2D\uFF08\u5FC5\u987B\u4FDD\u5B58\uFF0C\u5426\u5219\u586B\u5199\u7684\u7B54\u6848\u65E0\u6548\uFF09\uFF0C<br>\u8BF7\u52FF\u64CD\u4F5C...",
+          content: "正在保存题目中（必须保存，否则填写的答案无效），<br>请勿操作...",
           confirmButton: null
         });
         await waitForCaptcha();
@@ -10949,19 +11354,19 @@ ${content}</tr>
         if (next2) {
           next2.click();
         } else {
-          $console.error("\u672A\u627E\u5230\u4E0B\u4E00\u9875\u6309\u94AE\u3002");
+          $console.error("未找到下一页按钮。");
         }
         modal2 == null ? void 0 : modal2.remove();
       }
-      lib.$message.info({ content: "\u4F5C\u4E1A/\u8003\u8BD5\u5B8C\u6210\uFF0C\u8BF7\u81EA\u884C\u68C0\u67E5\u540E\u4FDD\u5B58\u6216\u63D0\u4EA4\u3002", duration: 0 });
+      lib.$message.info({ content: "作业/考试完成，请自行检查后保存或提交。", duration: 0 });
       worker.emit("done");
     }).catch((err) => {
-      lib.$message.error({ content: "\u7B54\u9898\u7A0B\u5E8F\u53D1\u751F\u9519\u8BEF : " + err.message, duration: 0 });
+      lib.$message.error({ content: "答题程序发生错误 : " + err.message, duration: 0 });
     });
     return worker;
   }
   function xnkWork({ answererWrappers, period, thread, answerSeparators, answerMatchMode }) {
-    lib.$message.info({ content: "\u5F00\u59CB\u4F5C\u4E1A" });
+    lib.$message.info({ content: "开始作业" });
     CommonProject.scripts.workResults.methods.init();
     const titleTransform = (titles) => {
       return titles.filter((t2) => t2 == null ? void 0 : t2.innerText).map((t2) => t2 ? optimizationElementWithImage(t2).innerText : "").join(",");
@@ -10992,7 +11397,7 @@ ${content}</tr>
             });
           });
         } else {
-          throw new Error("\u9898\u76EE\u4E3A\u7A7A\uFF0C\u8BF7\u67E5\u770B\u9898\u76EE\u662F\u5426\u4E3A\u7A7A\uFF0C\u6216\u8005\u5FFD\u7565\u6B64\u9898");
+          throw new Error("题目为空，请查看题目是否为空，或者忽略此题");
         }
       },
       work: {
@@ -11043,14 +11448,14 @@ ${content}</tr>
         next2 == null ? void 0 : next2.click();
         await lib.$.sleep(1e3);
       }
-      lib.$message.info({ content: "\u4F5C\u4E1A/\u8003\u8BD5\u5B8C\u6210\uFF0C\u8BF7\u81EA\u884C\u68C0\u67E5\u540E\u4FDD\u5B58\u6216\u63D0\u4EA4\u3002", duration: 0 });
+      lib.$message.info({ content: "作业/考试完成，请自行检查后保存或提交。", duration: 0 });
       worker.emit("done");
       CommonProject.scripts.workResults.cfg.questionPositionSyncHandlerType = "zhs-xnk";
     })();
     return worker;
   }
   function smartWork(remotePage, { answererWrappers, period, thread, answerSeparators, answerMatchMode }) {
-    lib.$message.info({ content: "\u5F00\u59CB\u4F5C\u4E1A" });
+    lib.$message.info({ content: "开始作业" });
     CommonProject.scripts.workResults.methods.init();
     const titleTransform = (titles) => {
       return titles.filter((t2) => t2 == null ? void 0 : t2.innerText).map((t2) => t2 ? optimizationElementWithImage(t2).innerText : "").join(",");
@@ -11063,7 +11468,7 @@ ${content}</tr>
       root: ".questionContent",
       elements: {
         title: ".questionName .centent-pre",
-        options: ".radio-view li.clearfix, .checkbox-views label.el-checkbox"
+        options: ".radio-view li.clearfix, .checkbox-views label.el-checkbox, .fillAnswer"
       },
       thread: thread != null ? thread : 1,
       answerSeparators: answerSeparators.split(",").map((s) => s.trim()),
@@ -11080,20 +11485,20 @@ ${content}</tr>
             });
           });
         } else {
-          throw new Error("\u9898\u76EE\u4E3A\u7A7A\uFF0C\u8BF7\u67E5\u770B\u9898\u76EE\u662F\u5426\u4E3A\u7A7A\uFF0C\u6216\u8005\u5FFD\u7565\u6B64\u9898");
+          throw new Error("题目为空，请查看题目是否为空，或者忽略此题");
         }
       },
       work: {
         type(ctx) {
           var _a, _b, _c;
           const type = (_c = (_b = (_a = ctx.elements.title[0]) == null ? void 0 : _a.parentElement) == null ? void 0 : _b.querySelector(".letterSortNum")) == null ? void 0 : _c.textContent;
-          if (type == null ? void 0 : type.includes("\u5355\u9009\u9898")) {
+          if (type == null ? void 0 : type.includes("单选题")) {
             return "single";
-          } else if (type == null ? void 0 : type.includes("\u591A\u9009\u9898")) {
+          } else if (type == null ? void 0 : type.includes("多选题")) {
             return "multiple";
-          } else if (type == null ? void 0 : type.includes("\u5224\u65AD\u9898")) {
+          } else if (type == null ? void 0 : type.includes("判断题")) {
             return "judgement";
-          } else if (type == null ? void 0 : type.includes("\u586B\u7A7A\u9898")) {
+          } else if (type == null ? void 0 : type.includes("填空")) {
             return "completion";
           } else {
             return void 0;
@@ -11101,17 +11506,14 @@ ${content}</tr>
         },
         async handler(type, answer, option, ctx) {
           if (type === "judgement" || type === "single" || type === "multiple") {
-            let label = null;
-            if (type === "multiple") {
-              label = option.querySelector(".el-checkbox__input:not(.is-checked)");
-            } else {
-              label = option.querySelector("i.iconfont:not(.checkedIcon)");
-            }
-            if (label) {
+            const opt = option.querySelector(
+              ".el-checkbox__input:not(.is-checked),i.iconfont:not(.checkedIcon)"
+            );
+            if (opt) {
               if (remotePage) {
-                await remotePage.click(label);
+                await remotePage.click(opt);
               } else {
-                label.click();
+                opt.click();
               }
               await lib.$.sleep(200);
             }
@@ -11150,6 +11552,7 @@ ${content}</tr>
           first.click();
         await lib.$.sleep(3e3);
       }
+      let count = 0;
       while (next2 && worker.isClose === false) {
         await worker.doWork({ enable_debug: true });
         next2 = getNextBtn();
@@ -11160,16 +11563,20 @@ ${content}</tr>
           else
             next2.click();
           await lib.$.sleep(1e3);
+          count++;
         }
       }
-      lib.$message.info({ content: "\u4F5C\u4E1A/\u8003\u8BD5\u5B8C\u6210\uFF0C\u8BF7\u81EA\u884C\u68C0\u67E5\u540E\u4FDD\u5B58\u6216\u63D0\u4EA4\u3002", duration: 0 });
+      lib.$message.info({
+        content: "作业/考试完成，请自行检查后保存或提交。",
+        duration: count > 10 ? 0 : 30
+      });
       worker.emit("done");
       CommonProject.scripts.workResults.cfg.questionPositionSyncHandlerType = "zhs-smart";
     })();
     return worker;
   }
   function fusioncourseWork(remotePage, { answererWrappers, period, thread, answerSeparators, answerMatchMode }) {
-    lib.$message.info({ content: "\u5F00\u59CB\u4F5C\u4E1A" });
+    lib.$message.info({ content: "开始作业" });
     CommonProject.scripts.workResults.methods.init({
       questionPositionSyncHandlerType: "zhs-fusion"
     });
@@ -11198,19 +11605,19 @@ ${content}</tr>
             });
           });
         } else {
-          throw new Error("\u9898\u76EE\u4E3A\u7A7A\uFF0C\u8BF7\u67E5\u770B\u9898\u76EE\u662F\u5426\u4E3A\u7A7A\uFF0C\u6216\u8005\u5FFD\u7565\u6B64\u9898");
+          throw new Error("题目为空，请查看题目是否为空，或者忽略此题");
         }
       },
       work: {
         type(ctx) {
           const type = ctx.elements.type[0].textContent;
-          if (type == null ? void 0 : type.includes("\u5355\u9009\u9898")) {
+          if (type == null ? void 0 : type.includes("单选题")) {
             return "single";
-          } else if (type == null ? void 0 : type.includes("\u591A\u9009\u9898")) {
+          } else if (type == null ? void 0 : type.includes("多选题")) {
             return "multiple";
-          } else if (type == null ? void 0 : type.includes("\u5224\u65AD\u9898")) {
+          } else if (type == null ? void 0 : type.includes("判断题")) {
             return "judgement";
-          } else if (type == null ? void 0 : type.includes("\u586B\u7A7A\u9898")) {
+          } else if (type == null ? void 0 : type.includes("填空题")) {
             return "completion";
           } else {
             return void 0;
@@ -11218,14 +11625,15 @@ ${content}</tr>
         },
         async handler(type, answer, option, ctx) {
           if (type === "judgement" || type === "single" || type === "multiple") {
-            let label = null;
-            if (type === "multiple") {
-              label = option.querySelector(".el-checkbox__input:not(.is-checked)");
-            } else {
-              label = option.querySelector(".radio__input:not(.is-checked)");
-            }
-            if (label) {
-              label.click();
+            const opt = option.querySelector(
+              ".el-checkbox__input:not(.is-checked),.el-radio__input:not(.is-checked)"
+            );
+            if (opt) {
+              if (remotePage) {
+                await remotePage.click(opt);
+              } else {
+                opt.click();
+              }
               await lib.$.sleep(200);
             }
           }
@@ -11251,20 +11659,131 @@ ${content}</tr>
       if (worker.isClose === true) {
         return;
       }
-      lib.$message.info({ content: "\u4F5C\u4E1A/\u8003\u8BD5\u5B8C\u6210\uFF0C\u8BF7\u81EA\u884C\u68C0\u67E5\u540E\u4FDD\u5B58\u6216\u63D0\u4EA4\u3002", duration: 0 });
+      lib.$message.info({
+        content: "作业/考试完成，请自行检查后保存或提交。",
+        duration: res.length > 10 ? 0 : 30
+      });
       worker.emit("done");
     }).catch((err) => {
-      lib.$message.error({ content: "\u7B54\u9898\u7A0B\u5E8F\u53D1\u751F\u9519\u8BEF : " + err.message, duration: 0 });
+      lib.$message.error({ content: "答题程序发生错误 : " + err.message, duration: 0 });
     });
+    return worker;
+  }
+  function hikeWork(remotePage, { answererWrappers, period, thread, answerSeparators, answerMatchMode }) {
+    lib.$message.info({ content: "开始作业" });
+    CommonProject.scripts.workResults.methods.init({
+      questionPositionSyncHandlerType: "zhs-hike"
+    });
+    const titleTransform = (titles) => {
+      return titles.filter((t2) => t2 == null ? void 0 : t2.innerText).map((t2) => t2 ? optimizationElementWithImage(t2).innerText : "").join(",");
+    };
+    const worker = new OCSWorker({
+      root: ".q_main",
+      elements: {
+        type: ".question_score",
+        title: ".question-topic",
+        options: "label"
+      },
+      thread: thread != null ? thread : 1,
+      answerSeparators: answerSeparators.split(",").map((s) => s.trim()),
+      answerMatchMode,
+      answerer: (elements2, ctx) => {
+        const title = titleTransform(elements2.title);
+        if (title) {
+          return CommonProject.scripts.apps.methods.searchAnswerInCaches(title, async () => {
+            await lib.$.sleep((period != null ? period : 3) * 1e3);
+            return defaultAnswerWrapperHandler(answererWrappers, {
+              type: ctx.type || "unknown",
+              title,
+              options: ctx.elements.options.map((o) => o.innerText).join("\n")
+            });
+          });
+        } else {
+          throw new Error("题目为空，请查看题目是否为空，或者忽略此题");
+        }
+      },
+      work: {
+        type(ctx) {
+          const type = ctx.elements.type[0].textContent;
+          if (type == null ? void 0 : type.includes("单选题")) {
+            return "single";
+          } else if (type == null ? void 0 : type.includes("多选题")) {
+            return "multiple";
+          } else if (type == null ? void 0 : type.includes("判断题")) {
+            return "judgement";
+          } else if (type == null ? void 0 : type.includes("填空题")) {
+            return "completion";
+          } else {
+            return void 0;
+          }
+        },
+        async handler(type, answer, option, ctx) {
+          if (type === "judgement" || type === "single" || type === "multiple") {
+            const opt = option.querySelector(
+              ".el-checkbox__input:not(.is-checked),.el-radio__input:not(.is-checked)"
+            );
+            if (opt) {
+              if (remotePage) {
+                await remotePage.click(opt);
+              } else {
+                opt.click();
+              }
+              await lib.$.sleep(200);
+            }
+          }
+        }
+      },
+      onResultsUpdate(current, _, res) {
+        var _a;
+        if (current.result) {
+          CommonProject.scripts.workResults.methods.setResults(simplifyWorkResult(res, titleTransform));
+        }
+        if ((_a = current.result) == null ? void 0 : _a.finish) {
+          CommonProject.scripts.apps.methods.addQuestionCacheFromWorkResult(
+            simplifyWorkResult([current], titleTransform)
+          );
+        }
+        CommonProject.scripts.workResults.methods.updateWorkStateByResults(res);
+      }
+    });
+    const getNextBtn = () => document.querySelector(".check_btn:not(.is-disabled)");
+    let next2 = getNextBtn();
+    let count = 0;
+    (async () => {
+      const first = document.querySelector(".card_ul .card_li");
+      if (first) {
+        if (remotePage)
+          await remotePage.click(first);
+        else
+          first.click();
+        await lib.$.sleep(3e3);
+      }
+      while (next2 && worker.isClose === false) {
+        await worker.doWork({ enable_debug: true });
+        next2 = getNextBtn();
+        if (next2) {
+          await lib.$.sleep(1e3);
+          if (remotePage)
+            await remotePage.click(next2);
+          else
+            next2.click();
+          await lib.$.sleep(1e3);
+          count++;
+        }
+      }
+      lib.$message.info({ content: "作业/考试完成，请自行检查后保存或提交。", duration: count > 10 ? 0 : 30 });
+      worker.emit("done");
+      CommonProject.scripts.workResults.cfg.questionPositionSyncHandlerType = "zhs-hike";
+    })();
     return worker;
   }
   function optimizeSecond(second) {
     if (second > 3600) {
-      return `${Math.floor(second / 3600)}\u5C0F\u65F6${Math.floor(second % 3600 / 60)}\u5206\u949F`;
+      return `${Math.floor(second / 3600)}小时${Math.floor(second % 3600 / 60)}分钟`;
     } else if (second > 60) {
-      return `${Math.floor(second / 60)}\u5206\u949F${second % 60}\u79D2`;
+      return `${Math.floor(second / 60)}分钟${second % 60}秒`;
     } else {
-      return `${second}\u79D2`;
+      return `${second}秒`;
     }
   }
   function autoStop(stopTime) {
@@ -11283,7 +11802,7 @@ ${content}</tr>
           clearInterval(state$4.study.stopInterval);
           state$4.study.stop = true;
           (_a2 = lib.$el("video")) == null ? void 0 : _a2.pause();
-          lib.$modal.alert({ content: "\u811A\u672C\u6682\u505C\uFF0C\u5DF2\u83B7\u5F97\u4ECA\u65E5\u5E73\u65F6\u5206\uFF0C\u5982\u9700\u7EE7\u7EED\u89C2\u770B\uFF0C\u8BF7\u5237\u65B0\u9875\u9762\u3002" });
+          lib.$modal.alert({ content: "脚本暂停，已获得今日平时分，如需继续观看，请刷新页面。" });
         }
       }, 1e3);
       const val = ((_b = ZHSProject.scripts["gxk-study"].configs.stopTime.options.find((t2) => t2[0] === stopTime)) == null ? void 0 : _b[0]) || "0";
@@ -11291,7 +11810,7 @@ ${content}</tr>
       date.setMinutes(date.getMinutes() + parseFloat(val) * 60);
       state$4.study.stopMessage = lib.$message.info({
         duration: 0,
-        content: `\u5728 ${date.toLocaleTimeString()} \u811A\u672C\u5C06\u81EA\u52A8\u6682\u505C`
+        content: `在 ${date.toLocaleTimeString()} 脚本将自动暂停`
       });
     }
   }
@@ -11309,7 +11828,7 @@ ${content}</tr>
   }
   function finishAlert() {
     lib.$modal.alert({
-      content: "\u68C0\u6D4B\u5230\u5F53\u524D\u89C6\u9891\u5168\u90E8\u64AD\u653E\u5B8C\u6BD5\uFF0C\u5982\u679C\u8FD8\u6709\u672A\u5B8C\u6210\u7684\u89C6\u9891\u8BF7\u5237\u65B0\u91CD\u8BD5\uFF0C\u6216\u8005\u6253\u5F00\u590D\u4E60\u6A21\u5F0F\u3002"
+      content: "检测到当前视频全部播放完毕，如果还有未完成的视频请刷新重试，或者打开复习模式。"
     });
   }
   var md5$1 = { exports: {} };
@@ -13488,9 +14007,9 @@ ${content}</tr>
     if (gsub == null)
       return gls;
     var llist = gsub.lookupList, flist = gsub.featureList;
-    var wsep = '\n	" ,.:;!?()  \u060C';
-    var R2 = "\u0622\u0623\u0624\u0625\u0627\u0629\u062F\u0630\u0631\u0632\u0648\u0671\u0672\u0673\u0675\u0676\u0677\u0688\u0689\u068A\u068B\u068C\u068D\u068E\u068F\u0690\u0691\u0692\u0693\u0694\u0695\u0696\u0697\u0698\u0699\u06C0\u06C3\u06C4\u06C5\u06C6\u06C7\u06C8\u06C9\u06CA\u06CB\u06CD\u06CF\u06D2\u06D3\u06D5\u06EE\u06EF\u0710\u0715\u0716\u0717\u0718\u0719\u071E\u0728\u072A\u072C\u072F\u074D\u0759\u075A\u075B\u076B\u076C\u0771\u0773\u0774\u0778\u0779\u0840\u0846\u0847\u0849\u0854\u0867\u0869\u086A\u08AA\u08AB\u08AC\u08AE\u08B1\u08B2\u08B9\u0AC5\u0AC7\u0AC9\u0ACA\u0ACE\u0ACF\u0AD0\u0AD1\u0AD2\u0ADD\u0AE1\u0AE4\u0AEF\u0B81\u0B83\u0B84\u0B85\u0B89\u0B8C\u0B8E\u0B8F\u0B91\u0BA9\u0BAA\u0BAB\u0BAC";
-    var L = "\uA872\u0ACD\u0AD7";
+    var wsep = '\n	" ,.:;!?()  ،';
+    var R2 = "آأؤإاةدذرزوٱٲٳٵٶٷڈډڊڋڌڍڎڏڐڑڒړڔڕږڗژڙۀۃۄۅۆۇۈۉۊۋۍۏےۓەۮۯܐܕܖܗܘܙܞܨܪܬܯݍݙݚݛݫݬݱݳݴݸݹࡀࡆࡇࡉࡔࡧࡩࡪࢪࢫࢬࢮࢱࢲࢹૅેૉ૊૎૏ૐ૑૒૝ૡ૤૯஁ஃ஄அஉ஌எஏ஑னப஫஬";
+    var L = "ꡲ્૗";
     for (var ci = 0; ci < gls.length; ci++) {
       var gl = gls[ci];
       var slft = ci == 0 || wsep.indexOf(str[ci - 1]) != -1;
@@ -14020,7 +14539,7 @@ ${content}</tr>
     }
   };
   const CXProject = lib.Project.create({
-    name: "\u8D85\u661F\u5B66\u4E60\u901A",
+    name: "超星学习通",
     domains: [
       "chaoxing.com",
       "edu.cn",
@@ -14039,124 +14558,140 @@ ${content}</tr>
       "zhihui-yun.com",
       "cqie.cn",
       "ccqmxx.com",
-      "jxgmxy.com"
+      "jxgmxy.com",
+      "sslibrary.com"
     ],
     scripts: {
       guide: new lib.Script({
-        name: "\u{1F4A1} \u4F7F\u7528\u63D0\u793A",
+        name: "💡 使用提示",
         matches: [
-          ["\u9996\u9875", "https://www.chaoxing.com"],
-          ["\u65E7\u7248\u4E2A\u4EBA\u9996\u9875", "chaoxing.com/space/index"],
-          ["\u65B0\u7248\u4E2A\u4EBA\u9996\u9875", "chaoxing.com/base"],
-          ["\u8BFE\u7A0B\u9996\u9875", "chaoxing.com/mycourse"],
-          ["\u65B0\u7248\u8BFE\u7A0B\u9996\u9875", "chaoxing.com/mooc2-ans/mycourse"]
+          ["首页", "https://www.chaoxing.com"],
+          ["旧版个人首页", "chaoxing.com/space/index"],
+          ["新版个人首页", "chaoxing.com/base"],
+          ["学习页面", "chaoxing.com/mycourse"],
+          ["新版学习页面", "chaoxing.com/mooc2-ans/mycourse"]
         ],
         namespace: "cx.guide",
         configs: {
           notes: {
-            defaultValue: `\u8BF7\u624B\u52A8\u8FDB\u5165\u89C6\u9891\u3001\u4F5C\u4E1A\u3001\u8003\u8BD5\u9875\u9762\uFF0C\u811A\u672C\u4F1A\u81EA\u52A8\u8FD0\u884C\u3002`
+            defaultValue: `请手动进入视频、作业、考试页面，脚本会自动运行。`
           }
         },
         oncomplete() {
-          CommonProject.scripts.render.methods.pin(this);
+          if (["chaoxing.com/mycourse", "chaoxing.com/mooc2-ans/mycourse"].some((path) => location.href.includes(path))) {
+            lib.$message.success("已进入学习页面，请等待自动运行...");
+            return;
+          }
+          lib.$message.info("请手动进入视频、作业、考试页面，脚本会自动运行。");
         }
       }),
       study: new lib.Script({
-        name: "\u{1F5A5}\uFE0F \u8BFE\u7A0B\u5B66\u4E60",
+        name: "🖥️ 课程学习",
         namespace: "cx.new.study",
         matches: [
-          ["\u4EFB\u52A1\u70B9\u9875\u9762", "/knowledge/cards"],
-          ["\u9605\u8BFB\u4EFB\u52A1\u70B9", "/readsvr/book/mooc"]
+          ["任务点页面", "/knowledge/cards"],
+          ["阅读任务点", "/readsvr/book/mooc"]
         ],
         configs: {
           notes: {
             defaultValue: lib.$ui.notes([
-              "\u81EA\u52A8\u7B54\u9898\u524D\u8BF7\u5728 \u201C\u901A\u7528-\u5168\u5C40\u8BBE\u7F6E\u201D \u4E2D\u8BBE\u7F6E\u9898\u5E93\u914D\u7F6E\u3002",
-              ["\u4EFB\u52A1\u70B9\u4E0D\u662F\u987A\u5E8F\u6267\u884C\uFF0C\u5982\u679C\u67D0\u4E00\u4E2A\u4EFB\u52A1\u6CA1\u6709\u52A8", "\u8BF7\u67E5\u770B\u662F\u5426\u6709\u5176\u4ED6\u4EFB\u52A1\u6B63\u5728\u5B66\u4E60\uFF0C\u8010\u5FC3\u7B49\u5F85\u5373\u53EF\u3002"],
-              "\u95EF\u5173\u6A21\u5F0F\u8BF7\u6CE8\u610F\u9898\u5E93\u5982\u679C\u6CA1\u5B8C\u6210\uFF0C\u9700\u8981\u81EA\u5DF1\u5B8C\u6210\u624D\u80FD\u89E3\u9501\u7AE0\u8282\u3002",
-              "\u4E0D\u8981\u6700\u5C0F\u5316\u6D4F\u89C8\u5668\uFF0C\u53EF\u80FD\u5BFC\u81F4\u811A\u672C\u6682\u505C\u3002",
-              "\u811A\u672C\u8BE6\u60C5\u8FD0\u884C\u65E5\u5FD7\u8BF7\u524D\u5F80\uFF1A\u540E\u53F0-\u65E5\u5FD7 \u67E5\u770B"
+              ["任务点不是顺序执行，如果某一个任务没有动", "请查看是否有其他任务正在学习，耐心等待即可。"],
+              "闯关模式请注意题库如果没完成，需要自己完成才能解锁章节。",
+              "请勿凌晨刷课，部分学校课程可能会清空进度。",
+              ["⚠️目前超星倍速风控严重，如果高倍速", "完成后被清空还原，请调到1-2倍速学习！"]
             ]).outerHTML
           },
           playbackRate,
           volume,
           videoQuizStrategy: {
-            label: "\u89C6\u9891\u5185\u9898\u76EE",
+            label: "视频内题目",
             tag: "select",
             options: [
-              ["random", "\u968F\u673A\u7B54\u9898"],
-              ["ignore", "\u5FFD\u7565"]
+              ["random", "随机答题"],
+              ["ignore", "忽略"]
             ],
             attrs: {
-              title: "\u89C6\u9891\u6709\u65F6\u5728\u5B66\u4E60\u8FC7\u7A0B\u4E2D\u4F1A\u5F39\u51FA\u9898\u76EE\uFF0C\u8FD9\u4E2A\u597D\u50CF\u5E76\u4E0D\u8BA1\u7B97\u5728\u5206\u6570\u5185\uFF0C\u6240\u4EE5\u53EF\u4EE5\u5FFD\u7565\uFF0C\u89C6\u9891\u53EF\u4EE5\u6B63\u5E38\u89C2\u770B\uFF0C\u8FD9\u91CC\u63D0\u4F9B\u51E0\u4E2A\u65B9\u6CD5\u5904\u7406\u9898\u76EE"
+              title: "视频有时在学习过程中会弹出题目，这个好像并不计算在分数内，所以可以忽略，视频可以正常观看，这里提供几个方法处理题目"
             },
             defaultValue: "random"
           },
           mode: {
-            label: "\u8DF3\u8F6C\u6A21\u5F0F",
+            label: "跳转模式",
             tag: "select",
             options: [
-              ["next", "\u5B8C\u6210\u540E\u8DF3\u8F6C\u4E0B\u4E00\u8282", "\u5B8C\u6210\u5C0F\u8282\u540E\uFF0C\u81EA\u52A8\u70B9\u51FB\u4E0B\u4E00\u8282\u6309\u94AE"],
-              ["job", "\u5B8C\u6210\u540E\u8DF3\u8F6C\u672A\u5B8C\u6210\u4EFB\u52A1\u70B9\uFF08\u8BD5\u9A8C\u529F\u80FD\uFF09", "\u5982\u679C\u672A\u627E\u5230\u4EFB\u52A1\u70B9\uFF0C\u5219\u4F1A\u76F4\u63A5\u7ED3\u675F\u811A\u672C\u8FD0\u884C\uFF0C\u76EE\u524D\u5904\u4E8E\u8BD5\u9A8C\u9636\u6BB5\u3002"],
-              ["manually", "\u5B8C\u6210\u540E\u6682\u505C\uFF0C\u7B49\u5F85\u624B\u52A8\u8DF3\u8F6C", "\u9002\u7528\u4E8E\u81EA\u5DF1\u624B\u52A8\u8FD0\u884C"]
+              ["next", "完成后跳转下一节", "完成小节后，自动点击下一节按钮"],
+              ["job", "完成后跳转未完成任务点", "如果未找到任务点，则会直接结束脚本运行，目前处于试验阶段。"],
+              ["manually", "完成后暂停，等待手动跳转", "适用于自己手动运行"]
             ],
             defaultValue: "next"
           },
           restudy: {
-            label: "\u590D\u4E60\u6A21\u5F0F",
-            attrs: { title: "\u5DF2\u7ECF\u5B8C\u6210\u7684\u89C6\u9891\u7EE7\u7EED\u5B66\u4E60\uFF0C\u5E76\u4ECE\u5F53\u524D\u7684\u7AE0\u8282\u5F80\u4E0B\u5F00\u59CB\u5B66\u4E60", type: "checkbox" },
+            label: "复习模式",
+            attrs: { title: "已经完成的视频继续学习，并从当前的章节往下开始学习", type: "checkbox" },
             defaultValue: false
           },
           forceLearn: {
-            label: "\u5F3A\u5236\u5B66\u4E60",
+            label: "强制学习",
             attrs: {
-              title: "\u89C6\u9891\u4E00\u822C\u5206\u4E3A\uFF1A\u975E\u4EFB\u52A1\u70B9\u3001\u4EFB\u52A1\u70B9\u3001\u548C\u5DF2\u5B8C\u6210\u4EFB\u52A1\u70B9\uFF0C\u5F53\u9047\u5230\u201C\u975E\u4EFB\u52A1\u70B9\u201D\u65F6\u9700\u8981\u5F00\u542F\u6B64\u9009\u9879\u624D\u4F1A\u8FDB\u884C\u5B66\u4E60",
+              title: "视频一般分为：非任务点、任务点、和已完成任务点，当遇到“非任务点”时需要开启此选项才会进行学习",
               type: "checkbox"
             },
             defaultValue: false
           },
           backToFirstWhenFinish: {
-            label: "\u5B8C\u6210\u5168\u90E8\u540E\u91CD\u65B0\u5B66\u4E60",
+            label: "完成全部后重新学习",
             attrs: {
               type: "checkbox",
-              title: "\u5F53\u7AE0\u8282\u5DF2\u7ECF\u5B66\u4E60\u5B8C\u6210\u81F3\u6700\u540E\u4E00\u7AE0\u65F6\uFF0C\u8DF3\u8F6C\u5230\u7B2C\u4E00\u4E2A\u7AE0\u8282\u91CD\u65B0\u5F00\u59CB\u5B66\u4E60\u3002"
+              title: "当章节已经学习完成至最后一章时，跳转到第一个章节重新开始学习。"
             },
             defaultValue: false
           },
           showTextareaWhenEdit: {
-            label: "\u7F16\u8F91\u65F6\u663E\u793A\u81EA\u5B9A\u4E49\u7F16\u8F91\u6846",
+            label: "编辑时显示自定义编辑框",
             attrs: {
               type: "checkbox",
-              title: "\u8D85\u661F\u9ED8\u8BA4\u7981\u6B62\u5728\u7F16\u8F91\u6846\u4E2D\u590D\u5236\u7C98\u8D34\uFF0C\u5F00\u542F\u6B64\u9009\u9879\u53EF\u4EE5\u5728\u6587\u672C\u6846\u7F16\u8F91\u65F6\u751F\u6210\u4E00\u4E2A\u81EA\u5B9A\u4E49\u7F16\u8F91\u6846\u8FDB\u884C\u7F16\u8F91\uFF0C\u811A\u672C\u4F1A\u5C06\u5185\u5BB9\u540C\u6B65\u5230\u7F16\u8F91\u6846\u4E2D\u3002"
+              title: "超星默认禁止在编辑框中复制粘贴，开启此选项可以在文本框编辑时生成一个自定义编辑框进行编辑，脚本会将内容同步到编辑框中。"
             },
             defaultValue: true
           },
           notifyWhenHasFaceRecognition: {
-            label: "\u51FA\u73B0\u4EBA\u8138\u8BC6\u522B\u65F6\u901A\u77E5\u6211",
+            label: "出现人脸识别时通知我",
             attrs: {
               type: "checkbox"
             },
             defaultValue: true
           },
+          enables: {
+            label: "高级设置",
+            attrs: { type: "checkbox" },
+            defaultValue: false
+          },
           enableMedia: {
-            separator: "\u4EFB\u52A1\u70B9\u5F00\u5173",
-            label: "\u89C6\u9891/\u97F3\u9891\u81EA\u52A8\u64AD\u653E",
-            attrs: { type: "checkbox", title: "\u5F00\u542F\uFF1A\u97F3\u9891\u548C\u89C6\u9891\u7684\u81EA\u52A8\u64AD\u653E" },
+            elementClassName: "config-details",
+            showIf: "cx.new.study.enables",
+            label: "视频/音频自动播放",
+            attrs: { type: "checkbox", title: "开启：音频和视频的自动播放" },
             defaultValue: true
           },
           enablePPT: {
-            label: "PPT/\u4E66\u7C4D\u81EA\u52A8\u5B8C\u6210",
-            attrs: { type: "checkbox", title: "\u5F00\u542F\uFF1APPT/\u4E66\u7C4D\u81EA\u52A8\u7FFB\u9605" },
+            elementClassName: "config-details",
+            showIf: "cx.new.study.enables",
+            label: "PPT/书籍自动完成",
+            attrs: { type: "checkbox", title: "开启：PPT/书籍自动翻阅" },
             defaultValue: true
           },
           enableChapterTest: {
-            label: "\u7AE0\u8282\u6D4B\u8BD5\u81EA\u52A8\u7B54\u9898",
-            attrs: { type: "checkbox", title: "\u5F00\u542F\uFF1A\u7AE0\u8282\u6D4B\u8BD5\u81EA\u52A8\u7B54\u9898" },
+            elementClassName: "config-details",
+            showIf: "cx.new.study.enables",
+            label: "章节测试自动答题",
+            attrs: { type: "checkbox", title: "开启：章节测试自动答题" },
             defaultValue: true
           },
           enableHyperlink: {
-            label: "\u94FE\u63A5\u4EFB\u52A1\u81EA\u52A8\u5B8C\u6210",
-            attrs: { type: "checkbox", title: "\u5F00\u542F\uFF1A\u94FE\u63A5\u4EFB\u52A1\u81EA\u52A8\u5B8C\u6210" },
+            elementClassName: "config-details",
+            showIf: "cx.new.study.enables",
+            label: "链接任务自动完成",
+            attrs: { type: "checkbox", title: "开启：链接任务自动完成" },
             defaultValue: true
           }
         },
@@ -14167,17 +14702,23 @@ ${content}</tr>
           }
           this.offConfigChange(state$3.study.playbackRateWarningListenerId);
           state$3.study.playbackRateWarningListenerId = this.onConfigChange("playbackRate", (playbackRate2) => {
-            if (playbackRate2 > 3) {
+            if (playbackRate2 > 2) {
               lib.$modal.alert({
-                title: "\u26A0\uFE0F\u9AD8\u500D\u901F\u8B66\u544A",
-                content: lib.$ui.notes(["\u9AD8\u500D\u901F\u53EF\u80FD\u5BFC\u81F4\u5B66\u4E60\u8BB0\u5F55\u6E05\u7A7A", "\u8D85\u661F\u540E\u53F0\u53EF\u4EE5\u770B\u5230\u5B66\u4E60\u65F6\u957F\uFF0C\u8BF7\u8C28\u614E\u8BBE\u7F6E\u2757"])
+                title: "⚠️高倍速警告",
+                content: lib.$ui.notes([
+                  "⚠️高倍速可能导致学习记录清空/回退",
+                  "⚠️超星后台可以看到学习时长，请谨慎设置",
+                  "⚠️如已清空/回退，请降低倍速至1-2倍"
+                ]),
+                maskCloseable: false,
+                confirmButtonText: "我已知晓风险"
               });
             }
           }) || 0;
         },
         async oncomplete() {
           if (/\/readsvr\/book\/mooc/.test(location.href)) {
-            $console.log("\u6B63\u5728\u5B8C\u6210\u4E66\u7C4D/PPT...");
+            $console.log("正在完成书籍/PPT...");
             setTimeout(() => {
               readweb.goto(epage);
             }, 5e3);
@@ -14201,35 +14742,36 @@ ${content}</tr>
         }
       }),
       work: new lib.Script({
-        name: "\u270D\uFE0F \u4F5C\u4E1A\u8003\u8BD5\u811A\u672C",
+        name: "✍️ 作业考试脚本",
         matches: [
-          ["\u4F5C\u4E1A\u9875\u9762", "/mooc2/work/dowork"],
-          ["\u8003\u8BD5\u6574\u5377\u9884\u89C8\u9875\u9762", "/mooc2/exam/preview"]
+          ["作业页面", "/mooc2/work/dowork"],
+          ["考试整卷预览页面", "/mooc2/exam/preview"]
         ],
         namespace: "cx.new.work",
         configs: { notes: workNotes },
         async oncomplete() {
           const isExam2 = /\/exam\/preview/.test(location.href);
           commonWork(this, {
-            workerProvider: (opts) => workOrExam$1(isExam2 ? "exam" : "work", { ...opts, preview_mode: true })
+            workerProvider: (opts) => workOrExam$1(isExam2 ? "exam" : "work", { ...opts, preview_mode: true }),
+            enable_control_panel: true
           });
         }
       }),
       autoRead: new lib.Script({
-        name: "\u{1F5A5}\uFE0F \u81EA\u52A8\u9605\u8BFB",
+        name: "🖥️ 自动阅读",
         matches: [
-          ["\u9605\u8BFB\u9875\u9762", "/ztnodedetailcontroller/visitnodedetail"],
-          ["\u8BFE\u7A0B\u76EE\u5F55", /chaoxing.com\/course\/\d+\.html/],
-          ["\u8BFE\u7A0B\u76EE\u5F55", /chaoxing.com\/mooc-ans\/course\/\d+\.html/]
+          ["阅读页面", "/ztnodedetailcontroller/visitnodedetail"],
+          ["课程目录", /chaoxing.com\/course\/\d+\.html/],
+          ["课程目录", /chaoxing.com\/mooc-ans\/course\/\d+\.html/]
         ],
         namespace: "cx.new.auto-read",
         configs: {
           notes: {
-            defaultValue: lib.$ui.notes(["\u9605\u8BFB\u4EFB\u52A1\u6B21\u65E5\u624D\u4F1A\u7EDF\u8BA1\u9605\u8BFB\u65F6\u957F"]).outerHTML
+            defaultValue: lib.$ui.notes(["阅读任务次日才会统计阅读时长"]).outerHTML
           },
           restartAfterFinish: {
-            label: "\u65E0\u9650\u9605\u8BFB",
-            attrs: { type: "checkbox", title: "\u9605\u8BFB\u5B8C\u6210\u6700\u540E\u4E00\u7AE0\u540E\u4ECE\u5934\u7B2C\u4E00\u7AE0\u7EE7\u7EED\u9605\u8BFB" },
+            label: "无限阅读",
+            attrs: { type: "checkbox", title: "阅读完成最后一章后从头第一章继续阅读" },
             defaultValue: false
           }
         },
@@ -14254,11 +14796,11 @@ ${content}</tr>
             } else {
               if (this.cfg.restartAfterFinish) {
                 setTimeout(() => startAtFirst(), 3e3);
-                lib.$message.info({ content: "\u5373\u5C06\u91CD\u65B0\u4ECE\u5934\u5F00\u59CB\u9605\u8BFB", duration: 10 });
-                $console.log("\u5373\u5C06\u91CD\u65B0\u4ECE\u5934\u5F00\u59CB\u9605\u8BFB");
+                lib.$message.info({ content: "即将重新从头开始阅读", duration: 10 });
+                $console.log("即将重新从头开始阅读");
               } else {
-                lib.$message.success({ content: "\u9605\u8BFB\u4EFB\u52A1\u5DF2\u5B8C\u6210", duration: 0 });
-                $console.log("\u672A\u68C0\u6D4B\u5230\u4E0B\u4E00\u9875");
+                lib.$message.success({ content: "阅读任务已完成", duration: 0 });
+                $console.log("未检测到下一页");
               }
             }
           }, (60 + 3) * 1e3);
@@ -14271,24 +14813,24 @@ ${content}</tr>
         }
       }),
       pageRedirect: new lib.Script({
-        name: "\u7AE0\u8282\u9875\u9762\u81EA\u52A8\u5207\u6362\u811A\u672C",
-        matches: [["\u8BFE\u7A0B\u4EFB\u52A1\u9875\u9762", "pageHeader=0"]],
+        name: "章节页面自动切换脚本",
+        matches: [["课程任务页面", "pageHeader=0"]],
         hideInPanel: true,
         async oncomplete() {
           if (top$1 === window) {
-            const a = document.querySelector('a[title="\u7AE0\u8282"]');
+            const a = document.querySelector('a[title="章节"]');
             if (a) {
               await $.sleep(1e3);
               a.click();
               lib.$message.info({
-                content: "\u5DF2\u7ECF\u4E3A\u60A8\u81EA\u52A8\u5207\u6362\u5230\u7AE0\u8282\u5217\u8868\u9875\u9762\uFF0C\u624B\u52A8\u8FDB\u5165\u4EFB\u610F\u7AE0\u8282\u5373\u53EF\u5F00\u59CB\u81EA\u52A8\u5B66\u4E60\uFF01"
+                content: "已经为您自动切换到章节列表页面，手动进入任意章节即可开始自动学习！"
               });
             }
           }
         }
       }),
       versionRedirect: new lib.Script({
-        name: "\u7248\u672C\u5207\u6362\u811A\u672C",
+        name: "版本切换脚本",
         matches: [
           ["", "mooc2=0"],
           ["", "mycourse/studentcourse"],
@@ -14301,7 +14843,7 @@ ${content}</tr>
         async oncomplete() {
           if (top$1 === window) {
             lib.$message.warn({
-              content: "OCS\u7F51\u8BFE\u52A9\u624B\u4E0D\u652F\u6301\u65E7\u7248\u8D85\u661F, \u5373\u5C06\u5207\u6362\u5230\u8D85\u661F\u65B0\u7248, \u5982\u6709\u5176\u4ED6\u7B2C\u4E09\u65B9\u63D2\u4EF6\u8BF7\u5173\u95ED, \u53EF\u80FD\u6709\u517C\u5BB9\u95EE\u9898\u5BFC\u81F4\u9891\u7E41\u5207\u6362\u3002",
+              content: "OCS网课助手不支持旧版超星, 即将切换到超星新版, 如有其他第三方插件请关闭, 可能有兼容问题导致频繁切换。",
               duration: 0
             });
             await $.sleep(2e3);
@@ -14315,42 +14857,55 @@ ${content}</tr>
                 newUrl.pathname = "/mycourse/studentstudy";
               }
               const params = newUrl.searchParams;
-              params.set("mooc2", "1");
-              params.set("newMooc", "true");
-              params.delete("examsystem");
-              window.location.replace(newUrl);
+              let changed = false;
+              if (params.get("mooc2") !== "1") {
+                params.set("mooc2", "1");
+                changed = true;
+              }
+              if (params.get("newMooc") !== "true") {
+                params.set("newMooc", "true");
+                changed = true;
+              }
+              if (changed)
+                window.location.replace(newUrl);
             }
           }
         }
       }),
       examRedirect: new lib.Script({
-        name: "\u8003\u8BD5\u6574\u5377\u9884\u89C8\u811A\u672C",
+        name: "考试整卷预览脚本",
         matches: [
-          ["\u65B0\u7248\u8003\u8BD5\u9875\u9762", "exam-ans/exam/test/reVersionTestStartNew"],
-          ["\u65B0\u7248\u8003\u8BD5\u9875\u97622", "mooc-ans/exam/test/reVersionTestStartNew"]
+          ["新版考试页面", "exam-ans/exam/test/reVersionTestStartNew"],
+          ["新版考试页面2", "mooc-ans/exam/test/reVersionTestStartNew"]
         ],
         hideInPanel: true,
         oncomplete() {
           var _a, _b;
-          if ((_b = (_a = lib.$gm.unsafeWindow.document.querySelector(".mark_info")) == null ? void 0 : _a.textContent) == null ? void 0 : _b.includes("\u4E0D\u5141\u8BB8\u6574\u5377\u9884\u89C8")) {
-            lib.$message.info({
-              content: "\u7531\u4E8E\u8D85\u661F\u7981\u6B62\u6574\u5377\u9884\u89C8\uFF0C\u6BCF\u9898\u76F8\u5F53\u4E8E\u4E00\u4E2A\u65B0\u9875\u9762\uFF0C\u56E0\u6B64\u641C\u7D22\u7ED3\u679C\u53EA\u4F1A\u663E\u793A\u4E00\u4E2A\u3002",
+          if ((_b = (_a = lib.$gm.unsafeWindow.document.querySelector(".mark_info")) == null ? void 0 : _a.textContent) == null ? void 0 : _b.includes("不允许整卷预览")) {
+            lib.$message.warn({
+              content: lib.$ui.notes([
+                "由于当前考试禁止整卷预览，各题为独立新页面，只能一个个答题",
+                "在考完前禁止手动切换题目，否则会导致重复答题！",
+                "完成后或者开考前请手动删除搜索结果！",
+                "想加快速度请更改通用-全局设置-高级设置-搜题间隔，设置为 1-3 秒即可。"
+              ]),
               duration: 0
             });
             const isExam2 = /\/exam\/test/.test(location.href);
             const workOptions = CommonProject.scripts.settings.methods.getWorkOptions();
-            commonWork(this, {
+            commonWork(CXProject.scripts.work, {
               start_delay_seconds: workOptions.period,
-              workerProvider: (opts) => workOrExam$1(isExam2 ? "exam" : "work", { ...opts, preview_mode: false })
+              enable_control_panel: true,
+              workerProvider: (opts) => workOrExam$1(isExam2 ? "exam" : "work", { ...opts, preview_mode: false, thread: 1 })
             });
             return;
           }
-          lib.$message.info({ content: "\u5373\u5C06\u8DF3\u8F6C\u5230\u6574\u5377\u9884\u89C8\u9875\u9762\u8FDB\u884C\u8003\u8BD5\u3002" });
+          lib.$message.info({ content: "即将跳转到整卷预览页面进行考试。" });
           setTimeout(() => lib.$gm.unsafeWindow.topreview(), 3e3);
         }
       }),
       rateHack: new lib.Script({
-        name: "\u5C4F\u853D\u500D\u901F\u9650\u5236",
+        name: "屏蔽倍速限制",
         hideInPanel: true,
         matches: [["", "/ananas/modules/video/"]],
         onstart() {
@@ -14358,9 +14913,9 @@ ${content}</tr>
         }
       }),
       copyHack: new lib.Script({
-        name: "\u5C4F\u853D\u590D\u5236\u7C98\u8D34\u9650\u5236",
+        name: "屏蔽复制粘贴限制",
         hideInPanel: true,
-        matches: [["\u6240\u6709\u9875\u9762", /.*/]],
+        matches: [["所有页面", /.*/]],
         methods() {
           return {
             hackEditorPaste() {
@@ -14374,7 +14929,7 @@ ${content}</tr>
                       if (CXProject.scripts.study.cfg.showTextareaWhenEdit) {
                         const defaultText = lib.h("span", { innerHTML: ue.textarea.value }).textContent;
                         lib.$modal.prompt({
-                          content: "\u8BF7\u5728\u6B64\u6587\u672C\u6846\u8FDB\u884C\u7F16\u8F91\uFF0C\u9632\u6B62\u8D85\u661F\u65E0\u6CD5\u590D\u5236\u7C98\u8D34\u3002(\u5982\u9700\u5173\u95ED\u8BF7\u524D\u5F80\u8BBE\u7F6E: \u8BFE\u7A0B\u5B66\u4E60-\u7F16\u8F91\u65F6\u663E\u793A\u81EA\u5B9A\u4E49\u7F16\u8F91\u6846)",
+                          content: "请在此文本框进行编辑，防止超星无法复制粘贴。(如需关闭请前往设置: 课程学习-编辑时显示自定义编辑框)",
                           width: 800,
                           inputDefaultValue: defaultText || "",
                           modalInputType: "textarea",
@@ -14404,24 +14959,20 @@ ${content}</tr>
             if (typeof lib.$gm.unsafeWindow.UE !== "undefined") {
               clearInterval(hackInterval);
               this.methods.hackEditorPaste();
-              console.log("\u5DF2\u89E3\u9664\u8F93\u5165\u6846\u65E0\u6CD5\u590D\u5236\u7C98\u8D34\u9650\u5236");
+              console.log("已解除输入框无法复制粘贴限制");
             }
           }, 500);
         }
       }),
       studyDispatcher: new lib.Script({
-        name: "\u8BFE\u7A0B\u5B66\u4E60\u8C03\u5EA6\u5668",
-        matches: [["\u8BFE\u7A0B\u5B66\u4E60\u9875\u9762", "/mycourse/studentstudy"]],
+        name: "课程学习调度器",
+        matches: [["课程学习页面", "/mycourse/studentstudy"]],
         namespace: "cx.new.study-dispatcher",
         hideInPanel: true,
         async oncomplete() {
-          lib.$menu("\u{1F5A5}\uFE0F", { scriptPanelLink: CXProject.scripts.study });
-          lib.$menu("\u2699\uFE0F", { scriptPanelLink: CommonProject.scripts.settings });
-          lib.$menu("\u{1F30F}", { scriptPanelLink: CommonProject.scripts.workResults });
-          lib.$menu("\u{1F4C4}", { scriptPanelLink: BackgroundProject.scripts.console });
-          lib.$menu("\u{1F4E5}", { scriptPanelLink: BackgroundProject.scripts.update });
           const restudy2 = CXProject.scripts.study.cfg.restudy;
           CommonProject.scripts.render.methods.pin(CXProject.scripts.study);
+          let chapters = await CXAnalyses.waitForChapterInfos();
           if (!restudy2) {
             const params = new URLSearchParams(window.location.href);
             const mooc = params.get("mooc2");
@@ -14430,10 +14981,9 @@ ${content}</tr>
               window.location.replace(decodeURIComponent(params.toString()));
               return;
             }
-            let chapters = await CXAnalyses.waitForChapterInfos();
             chapters = chapters.filter((chapter) => chapter.unFinishCount !== 0);
             if (chapters.length === 0) {
-              lib.$message.warn({ content: "\u9875\u9762\u4EFB\u52A1\u70B9\u6570\u91CF\u4E3A\u7A7A! \u8BF7\u5237\u65B0\u91CD\u8BD5!" });
+              lib.$message.warn({ content: "页面任务点数量为空! 请刷新重试!" });
             } else {
               const params2 = new URLSearchParams(window.location.href);
               const courseId = params2.get("courseId");
@@ -14441,33 +14991,40 @@ ${content}</tr>
               setTimeout(() => {
                 if (lib.$$el(`.posCatalog_active[id="cur${chapters[0].chapterId}"]`).length === 0) {
                   lib.$gm.unsafeWindow.getTeacherAjax(courseId, classId, chapters[0].chapterId);
+                  setTimeout(() => {
+                    CXAnalyses.scrollToActiveChapter();
+                  }, 1e3);
                 }
               }, 1e3);
             }
+          } else {
+            setTimeout(() => {
+              CXAnalyses.scrollToActiveChapter();
+            }, 1e3);
           }
         }
       }),
       cxSecretFontRecognize: new lib.Script({
-        name: "\u7E41\u4F53\u5B57\u8BC6\u522B",
+        name: "繁体字识别",
         hideInPanel: true,
         matches: [
-          ["\u9898\u76EE\u9875\u9762", "work/doHomeWorkNew"],
-          ["\u8003\u8BD5\u6574\u5377\u9884\u89C8", "/mooc2/exam/preview"],
-          ["\u4F5C\u4E1A", "/mooc2/work/dowork"]
+          ["题目页面", "work/doHomeWorkNew"],
+          ["考试整卷预览", "/mooc2/exam/preview"],
+          ["作业", "/mooc2/work/dowork"]
         ],
         async oncomplete() {
           await mappingRecognize();
         }
       }),
       jfkGuide: new lib.Script({
-        name: "\u{1F4A1} \u79EF\u5206\u8BFE\u4F7F\u7528\u63D0\u793A",
-        matches: [["\u79EF\u5206\u8BFE\u9875\u9762", "/plaza"]],
+        name: "💡 积分课使用提示",
+        matches: [["积分课页面", "/plaza"]],
         namespace: "cx.jfk.guide",
         configs: {
           notes: {
             defaultValue: lib.$ui.notes([
-              "\u79EF\u5206\u8BFE\u8BF7\u8FDB\u5165\u8BFE\u7A0B\u540E\uFF0C\u5F00\u542F\u590D\u4E60\u6A21\u5F0F\uFF0C\u5E76\u4E14\u5173\u95ED\u81EA\u52A8\u4E0B\u4E00\u7AE0",
-              "\u8BFE\u7A0B\u5B8C\u6210\u540E\u8BF7\u624B\u52A8\u5207\u6362\uFF0C\u5982\u679C\u7531\u811A\u672C\u8FDB\u884C\u81EA\u52A8\u8DF3\u8F6C\u4F1A\u51FA\u73B0\u4E71\u8DF3\u8F6C\u7684\u53EF\u80FD\u3002"
+              "积分课请进入课程后，开启复习模式，并且关闭自动下一章",
+              "课程完成后请手动切换，如果由脚本进行自动跳转会出现乱跳转的可能。"
             ]).outerHTML
           }
         },
@@ -14486,7 +15043,7 @@ ${content}</tr>
     answerMatchMode,
     preview_mode
   }) {
-    lib.$message.info(`\u5F00\u59CB${type === "work" ? "\u4F5C\u4E1A" : "\u8003\u8BD5"}`);
+    lib.$message.info(`开始${type === "work" ? "作业" : "考试"}`);
     if (preview_mode) {
       CommonProject.scripts.workResults.methods.init({
         questionPositionSyncHandlerType: "cx"
@@ -14538,10 +15095,10 @@ ${content}</tr>
               });
             });
           } else {
-            throw new Error("\u9898\u76EE\u4E3A\u7A7A\uFF0C\u8BF7\u67E5\u770B\u9898\u76EE\u662F\u5426\u4E3A\u7A7A\uFF0C\u6216\u8005\u5FFD\u7565\u6B64\u9898");
+            throw new Error("题目为空，请查看题目是否为空，或者忽略此题");
           }
         } else {
-          throw new Error("\u9898\u76EE\u4E3A\u7A7A\uFF0C\u8BF7\u67E5\u770B\u9898\u76EE\u662F\u5426\u4E3A\u7A7A\uFF0C\u6216\u8005\u5FFD\u7565\u6B64\u9898");
+          throw new Error("题目为空，请查看题目是否为空，或者忽略此题");
         }
       },
       work: async (ctx) => {
@@ -14602,11 +15159,22 @@ ${content}</tr>
         }
         return { finish: false };
       },
-      onResultsUpdate(current, _, res) {
-        var _a;
+      async onResultsUpdate(current, _, res) {
+        var _a, _b;
+        if (!preview_mode) {
+          if ((_a = current.result) == null ? void 0 : _a.finish) {
+            await CommonProject.scripts.workResults.methods.appendResults(
+              simplifyWorkResult(res, workOrExamQuestionTitleTransform)
+            );
+            CommonProject.scripts.apps.methods.addQuestionCacheFromWorkResult(
+              simplifyWorkResult([current], workOrExamQuestionTitleTransform)
+            );
+          }
+          return;
+        }
         CommonProject.scripts.workResults.methods.setResults(simplifyWorkResult(res, workOrExamQuestionTitleTransform));
         CommonProject.scripts.workResults.methods.updateWorkStateByResults(res);
-        if ((_a = current.result) == null ? void 0 : _a.finish) {
+        if ((_b = current.result) == null ? void 0 : _b.finish) {
           CommonProject.scripts.apps.methods.addQuestionCacheFromWorkResult(
             simplifyWorkResult([current], workOrExamQuestionTitleTransform)
           );
@@ -14615,11 +15183,11 @@ ${content}</tr>
     });
     if (preview_mode) {
       worker.doWork().then(() => {
-        lib.$message.info({ content: "\u4F5C\u4E1A/\u8003\u8BD5\u5B8C\u6210\uFF0C\u8BF7\u81EA\u884C\u68C0\u67E5\u540E\u4FDD\u5B58\u6216\u63D0\u4EA4\u3002", duration: 0 });
+        lib.$message.info({ content: "作业/考试完成，请自行检查后保存或提交。", duration: 0 });
         worker.emit("done");
       }).catch((err) => {
         console.error(err);
-        lib.$message.error("\u7B54\u9898\u7A0B\u5E8F\u53D1\u751F\u9519\u8BEF : " + err.message);
+        lib.$message.error("答题程序发生错误 : " + err.message);
       });
     } else {
       const getNextBtn = () => document.querySelector('[onclick="getTheNextQuestion(1)"]');
@@ -14632,7 +15200,7 @@ ${content}</tr>
           next2 == null ? void 0 : next2.click();
           await $.sleep(1e3);
         }
-        lib.$message.success({ content: "\u4F5C\u4E1A/\u8003\u8BD5\u5B8C\u6210\uFF0C\u8BF7\u81EA\u884C\u68C0\u67E5\u540E\u4FDD\u5B58\u6216\u63D0\u4EA4\u3002", duration: 0 });
+        lib.$message.success({ content: "作业/考试完成，请自行检查后保存或提交。", duration: 0 });
         worker.emit("done");
         CommonProject.scripts.workResults.cfg.questionPositionSyncHandlerType = "cx";
       })();
@@ -14666,7 +15234,7 @@ ${content}</tr>
     if (fontFaceEl && Object.keys(fontMap).length > 0) {
       const font = (_b = (_a = fontFaceEl.textContent) == null ? void 0 : _a.match(/base64,([\w\W]+?)'/)) == null ? void 0 : _b[1];
       if (font) {
-        $console.log("\u6B63\u5728\u8BC6\u522B\u7E41\u4F53\u5B57");
+        $console.log("正在识别繁体字");
         const code = typr_js.parse(base64ToUint8Array(font));
         const match = {};
         for (let i = 19968; i < 40870; i++) {
@@ -14693,22 +15261,22 @@ ${content}</tr>
           el.innerHTML = html;
           el.classList.remove("font-cxsecret");
         });
-        $console.log("\u8BC6\u522B\u7E41\u4F53\u5B57\u5B8C\u6210\u3002");
+        $console.log("识别繁体字完成。");
       } else {
-        $console.log("\u672A\u68C0\u6D4B\u5230\u7E41\u4F53\u5B57\u3002");
+        $console.log("未检测到繁体字。");
       }
     }
   }
   async function loadTyprMapping() {
     try {
-      $console.log("\u6B63\u5728\u52A0\u8F7D\u7E41\u4F53\u5B57\u5E93\u3002");
+      $console.log("正在加载繁体字库。");
       return await request("https://cdn.ocsjs.com/resources/font/table.json", {
         type: "GM_xmlhttpRequest",
         method: "get",
         responseType: "json"
       });
     } catch (err) {
-      $console.error("\u8F7D\u7E41\u4F53\u5B57\u5E93\u52A0\u8F7D\u5931\u8D25\uFF0C\u8BF7\u5237\u65B0\u9875\u9762\u91CD\u8BD5\uFF1A", String(err));
+      $console.error("载繁体字库加载失败，请刷新页面重试：", String(err));
     }
   }
   const CXAnalyses = {
@@ -14755,10 +15323,17 @@ ${content}</tr>
       return Array.from((top$1 == null ? void 0 : top$1.document.querySelectorAll('[onclick^="getTeacherAjax"]')) || []).map((el) => {
         var _a, _b, _c;
         return {
+          element: el,
           chapterId: (_b = (_a = el.getAttribute("onclick")) == null ? void 0 : _a.match(/\('(.*)','(.*)','(.*)'\)/)) == null ? void 0 : _b[3],
           unFinishCount: parseInt(((_c = el.parentElement.querySelector(".jobUnfinishCount")) == null ? void 0 : _c.value) || "0")
         };
       });
+    },
+    scrollToActiveChapter() {
+      const activeChapter = top$1 == null ? void 0 : top$1.document.querySelector(".posCatalog_active");
+      if (activeChapter) {
+        activeChapter.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
     },
     waitForChapterInfos(timeout = 10) {
       return new Promise((resolve, reject) => {
@@ -14878,7 +15453,7 @@ ${content}</tr>
         try {
           await job.func();
         } catch (e) {
-          $console.error("\u672A\u77E5\u9519\u8BEF", e);
+          $console.error("未知错误", e);
         }
         await $.sleep(1e3);
         await runJobs();
@@ -14897,14 +15472,14 @@ ${content}</tr>
       if (CXAnalyses.isInFinalTab()) {
         if (await CXAnalyses.isStuckInBreakingMode()) {
           return lib.$modal.alert({
-            content: "\u68C0\u6D4B\u5230\u6B64\u7AE0\u8282\u91CD\u590D\u8FDB\u5165, \u4E3A\u4E86\u907F\u514D\u65E0\u9650\u91CD\u590D, \u8BF7\u81EA\u884C\u624B\u52A8\u5B8C\u6210\u540E\u624B\u52A8\u70B9\u51FB\u4E0B\u4E00\u7AE0, \u6216\u8005\u5237\u65B0\u91CD\u8BD5\u3002"
+            content: "检测到此章节重复进入, 为了避免无限重复, 请自行手动完成后手动点击下一章, 或者刷新重试。"
           });
         }
       }
       if (CXAnalyses.isInFinalChapter()) {
         let content = "";
         if (opts.backToFirstWhenFinish) {
-          content = "\u5DF2\u7ECF\u62B5\u8FBE\u6700\u540E\u4E00\u4E2A\u7AE0\u8282\uFF0C10\u79D2\u540E\u8FD4\u56DE\u7B2C\u4E00\u4E2A\u7AE0\u8282\u91CD\u65B0\u5F00\u59CB\u3002";
+          content = "已经抵达最后一个章节，10秒后返回第一个章节重新开始。";
           setTimeout(() => {
             var _a2;
             (_a2 = top$1 == null ? void 0 : top$1.document.querySelector(".posCatalog_name")) == null ? void 0 : _a2.click();
@@ -14912,26 +15487,43 @@ ${content}</tr>
           lib.$message.info({ content, duration: 30 });
         } else {
           if (CXAnalyses.isFinishedAllChapters()) {
-            content = "\u5168\u90E8\u4EFB\u52A1\u70B9\u5DF2\u5B8C\u6210\uFF01";
+            content = "全部任务点已完成！";
           } else {
-            content = "\u5DF2\u7ECF\u62B5\u8FBE\u6700\u540E\u4E00\u4E2A\u7AE0\u8282\uFF01\u4F46\u4ECD\u7136\u6709\u4EFB\u52A1\u70B9\u672A\u5B8C\u6210\uFF0C\u8BF7\u624B\u52A8\u5207\u6362\u81F3\u672A\u5B8C\u6210\u7684\u7AE0\u8282\u3002";
+            content = "已经抵达最后一个章节！但仍然有任务点未完成，请手动切换至未完成的章节。";
           }
           lib.$modal.alert({ content });
         }
         CommonProject.scripts.settings.methods.notificationBySetting(content, {
           duration: 0,
-          extraTitle: "\u8D85\u661F\u5B66\u4E60\u901A\u5B66\u4E60\u811A\u672C"
+          extraTitle: "超星学习通学习脚本"
         });
         return;
       }
       if (CXProject.scripts.study.cfg.mode === "job") {
-        if (await checkChapterFinishedAndSkip(CXAnalyses.isInFinalTab()) === false) {
-          const content = "\u5168\u90E8\u4EFB\u52A1\u70B9\u5DF2\u5B8C\u6210\uFF01";
-          lib.$modal.alert({ content });
-          CommonProject.scripts.settings.methods.notificationBySetting(content, {
-            duration: 0,
-            extraTitle: "\u8D85\u661F\u5B66\u4E60\u901A\u5B66\u4E60\u811A\u672C"
-          });
+        if (CXAnalyses.isInFinalTab()) {
+          const elements2 = CXAnalyses.getChapterInfos().filter((el) => {
+            var _a2;
+            return el.unFinishCount > 0 || ((_a2 = el.element.parentElement) == null ? void 0 : _a2.classList.contains("posCatalog_active"));
+          }).map((el) => el.element.parentElement);
+          if (elements2.length === 0) {
+            const content = "全部任务点已完成！";
+            lib.$modal.alert({ content });
+            CommonProject.scripts.settings.methods.notificationBySetting(content, {
+              duration: 0,
+              extraTitle: "超星学习通学习脚本"
+            });
+            return;
+          }
+          let nextChapter = elements2[0];
+          const currentIndex = elements2.findIndex((el) => el.classList.contains("posCatalog_active"));
+          if (currentIndex !== -1 && currentIndex + 1 < elements2.length) {
+            nextChapter = elements2[currentIndex + 1];
+            CXAnalyses.scrollToActiveChapter();
+            setTimeout(() => {
+              var _a2;
+              (_a2 = nextChapter.querySelector(".posCatalog_name")) == null ? void 0 : _a2.click();
+            }, 1e3);
+          }
         }
       } else if (CXProject.scripts.study.cfg.mode === "next") {
         const curCourseId = lib.$el("#curCourseId", top$1 == null ? void 0 : top$1.document);
@@ -14940,22 +15532,28 @@ ${content}</tr>
         const count = lib.$$el("#prev_tab .prev_ul li", top$1 == null ? void 0 : top$1.document);
         if (curChapterId && curCourseId && curClazzId) {
           top$1._preChapterId = curChapterId.value;
+          const elements2 = CXAnalyses.getChapterInfos().map((e) => e.element.parentElement).filter(Boolean);
+          const index = elements2.findIndex((el) => el.classList.contains("posCatalog_active"));
+          const next_item = elements2[index + 1];
+          if (next_item) {
+            next_item.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
           top$1 == null ? void 0 : top$1.PCount.next(count.length.toString(), curChapterId.value, curCourseId.value, curClazzId.value, "");
         } else {
-          $console.warn("\u53C2\u6570\u9519\u8BEF\uFF0C\u65E0\u6CD5\u8DF3\u8F6C\u4E0B\u4E00\u7AE0\uFF0C\u8BF7\u5C1D\u8BD5\u624B\u52A8\u5207\u6362\u3002");
+          $console.warn("参数错误，无法跳转下一章，请尝试手动切换。");
         }
       } else {
-        $console.warn("\u672A\u77E5\u7684\u8DF3\u8F6C\u6A21\u5F0F\uFF0C\u8BF7\u8054\u7CFB\u4F5C\u8005\u53CD\u9988");
+        $console.warn("未知的跳转模式，请联系作者反馈");
       }
     };
     if (CXProject.scripts.study.cfg.mode !== "manually") {
-      const msg = "\u9875\u9762\u4EFB\u52A1\u70B9\u5DF2\u5B8C\u6210\uFF0C\u5373\u5C06\u8DF3\u8F6C\u3002";
+      const msg = "页面任务点已完成，即将跳转。";
       lib.$message.success({ content: msg });
       $console.info(msg);
       await $.sleep(5e3);
       next2();
     } else {
-      const msg = "\u9875\u9762\u4EFB\u52A1\u70B9\u5DF2\u5B8C\u6210\uFF0C\u81EA\u52A8\u8DF3\u8F6C\u5DF2\u5173\u95ED\uFF0C\u8BF7\u624B\u52A8\u8DF3\u8F6C\u3002";
+      const msg = "页面任务点已完成，自动跳转已关闭，请手动跳转。";
       lib.$message.warn({ content: msg, duration: 0 });
       $console.warn(msg);
     }
@@ -15012,18 +15610,18 @@ ${content}</tr>
         });
         if (attachment && searchedJobs.find((job2) => job2.mid === attachment.property.mid) === void 0) {
           const { name, title, bookname, author } = attachment.property;
-          const jobName = name || title || (bookname ? bookname + author : void 0) || "\u672A\u77E5\u4EFB\u52A1";
+          const jobName = name || title || (bookname ? bookname + author : void 0) || "未知任务";
           const work_type = attachment.job ? "job" : attachment.isPassed ? "finished" : "not-job";
           let func;
           if (videojs) {
             if (!CXProject.scripts.study.cfg.enableMedia) {
-              const msg = `\u97F3\u89C6\u9891\u81EA\u52A8\u5B66\u4E60\u529F\u80FD\u5DF2\u88AB\u5173\u95ED\uFF08\u5728\u4E0A\u65B9\u83DC\u5355\u680F\uFF0C\u8D85\u661F\u5B66\u4E60\u901A-\u8BFE\u7A0B\u5B66\u4E60\u4E2D\u5F00\u542F\uFF09\u3002${jobName} \u5373\u5C06\u8DF3\u8FC7`;
+              const msg = `音视频自动学习功能已被关闭（在上方菜单栏，超星学习通-课程学习中开启）。${jobName} 即将跳过`;
               lib.$message.warn({ content: msg, duration: 10 });
               $console.warn(msg);
             } else {
               if (work_type === "job" || work_type === "finished" && opts.restudy || work_type === "not-job" && opts.forceLearn) {
                 func = () => {
-                  const msg = `\u5373\u5C06${work_type === "finished" && opts.restudy ? "\u91CD\u65B0" : work_type === "not-job" && opts.forceLearn ? "\u5F3A\u5236" : ""}\u64AD\u653E : ` + jobName;
+                  const msg = `即将${work_type === "finished" && opts.restudy ? "重新" : work_type === "not-job" && opts.forceLearn ? "强制" : ""}播放 : ` + jobName;
                   lib.$message.info({ content: msg });
                   $console.log(msg);
                   return JobRunner.media(opts, win.document);
@@ -15032,26 +15630,26 @@ ${content}</tr>
             }
           } else if (chapterTest) {
             if (!CXProject.scripts.study.cfg.enableChapterTest) {
-              const msg = `\u7AE0\u8282\u6D4B\u8BD5\u81EA\u52A8\u7B54\u9898\u529F\u80FD\u5DF2\u88AB\u5173\u95ED\uFF08\u5728\u4E0A\u65B9\u83DC\u5355\u680F\uFF0C\u8D85\u661F\u5B66\u4E60\u901A-\u8BFE\u7A0B\u5B66\u4E60\u4E2D\u5F00\u542F\uFF09\u3002${jobName} \u5373\u5C06\u8DF3\u8FC7`;
+              const msg = `章节测试自动答题功能已被关闭（在上方菜单栏，超星学习通-课程学习中开启）。${jobName} 即将跳过`;
               lib.$message.warn({ content: msg, duration: 10 });
               $console.warn(msg);
             } else {
               const status = win.document.querySelector(".testTit_status");
               if (status == null ? void 0 : status.classList.contains("testTit_status_complete")) {
-                const msg = `\u7AE0\u8282\u6D4B\u8BD5\u5DF2\u5B8C\u6210 : ` + jobName;
+                const msg = `章节测试已完成 : ` + jobName;
                 lib.$message.success({ content: msg });
                 $console.log(msg);
               } else {
                 if (work_type === "job" || work_type === "not-job" && CommonProject.scripts.settings.cfg["work-when-no-job"]) {
                   func = () => {
-                    const msg = `\u5F00\u59CB\u7B54\u9898 : ` + jobName;
+                    const msg = `开始答题 : ` + jobName;
                     lib.$message.info({ content: msg });
                     $console.log(msg);
                     return JobRunner.chapter(root2, opts.workOptions);
                   };
                 }
                 if (work_type === "not-job" && CommonProject.scripts.settings.cfg["work-when-no-job"] === false) {
-                  const msg = `\u5F53\u524D\u4F5C\u4E1A ${jobName} \u4E0D\u662F\u4EFB\u52A1\u70B9\uFF0C\u4F46\u5F85\u5B8C\u6210\uFF0C\u5982\u9700\u5F00\u542F\u81EA\u52A8\u7B54\u9898\u8BF7\u524D\u5F80\uFF1A\u901A\u7528-\u5168\u5C40\u8BBE\u7F6E\uFF0C\u5F00\u542F\u5F3A\u5236\u7B54\u9898\u3002`;
+                  const msg = `当前作业 ${jobName} 不是任务点，但待完成，如需开启自动答题请前往：通用-全局设置，开启强制答题。`;
                   lib.$message.warn({ content: msg });
                   $console.warn(msg);
                 }
@@ -15059,13 +15657,13 @@ ${content}</tr>
             }
           } else if (read || pptWithAudio) {
             if (!CXProject.scripts.study.cfg.enablePPT) {
-              const msg = `PPT/\u4E66\u7C4D\u9605\u8BFB\u529F\u80FD\u5DF2\u88AB\u5173\u95ED\uFF08\u5728\u4E0A\u65B9\u83DC\u5355\u680F\uFF0C\u8D85\u661F\u5B66\u4E60\u901A-\u8BFE\u7A0B\u5B66\u4E60\u4E2D\u5F00\u542F\uFF09\u3002${jobName} \u5373\u5C06\u8DF3\u8FC7`;
+              const msg = `PPT/书籍阅读功能已被关闭（在上方菜单栏，超星学习通-课程学习中开启）。${jobName} 即将跳过`;
               lib.$message.warn({ content: msg, duration: 10 });
               $console.warn(msg);
             } else {
               if (attachment.job) {
                 func = () => {
-                  const msg = `\u6B63\u5728\u5B66\u4E60 : ` + jobName;
+                  const msg = `正在学习 : ` + jobName;
                   lib.$message.info({ content: msg });
                   $console.log(msg);
                   if (read) {
@@ -15078,13 +15676,13 @@ ${content}</tr>
             }
           } else if (hyperlink) {
             if (!CXProject.scripts.study.cfg.enableHyperlink) {
-              const msg = `\u94FE\u63A5\u4EFB\u52A1\u70B9\u5DF2\u88AB\u5173\u95ED\uFF08\u5728\u4E0A\u65B9\u83DC\u5355\u680F\uFF0C\u8D85\u661F\u5B66\u4E60\u901A-\u8BFE\u7A0B\u5B66\u4E60\u4E2D\u5F00\u542F\uFF09\u3002${jobName} \u5373\u5C06\u8DF3\u8FC7`;
+              const msg = `链接任务点已被关闭（在上方菜单栏，超星学习通-课程学习中开启）。${jobName} 即将跳过`;
               lib.$message.warn({ content: msg, duration: 10 });
               $console.warn(msg);
             } else {
               if (attachment.job) {
                 func = () => {
-                  const msg = `\u6B63\u5728\u5B8C\u6210\u94FE\u63A5\u9605\u8BFB\u4EFB\u52A1 : ` + jobName;
+                  const msg = `正在完成链接阅读任务 : ` + jobName;
                   lib.$message.info({ content: msg });
                   $console.log(msg);
                   return JobRunner.hyperlink(hyperlink);
@@ -15125,7 +15723,7 @@ ${content}</tr>
       const media = await waitForMedia({ root: doc });
       const { videojs } = domSearch({ videojs: "#video,#audio" }, doc);
       if (!videojs || !media) {
-        $console.error("\u89C6\u9891\u68C0\u6D4B\u4E0D\u5230\uFF0C\u8BF7\u5C1D\u8BD5\u5237\u65B0\u6216\u8005\u624B\u52A8\u5207\u6362\u4E0B\u4E00\u7AE0\u3002");
+        $console.error("视频检测不到，请尝试刷新或者手动切换下一章。");
         return;
       }
       state$3.study.videojs = videojs;
@@ -15159,15 +15757,17 @@ ${content}</tr>
       }
       return new Promise((resolve, reject) => {
         const reloadInterval = setInterval(() => {
-          if (["\u89C6\u9891\u6587\u4EF6\u635F\u574F", "\u7F51\u7EDC\u9519\u8BEF\u5BFC\u81F4\u89C6\u9891\u4E0B\u8F7D\u4E2D\u9014\u5931\u8D25"].some((s) => doc.documentElement.innerText.includes(s))) {
-            $console.error("\u68C0\u6D4B\u5230\u89C6\u9891\u52A0\u8F7D\u5931\u8D25\uFF0C\u5373\u5C06\u8DF3\u8FC7\u89C6\u9891\u3002");
-            lib.$message.error("\u68C0\u6D4B\u5230\u89C6\u9891\u52A0\u8F7D\u5931\u8D25\uFF0C\u5373\u5C06\u8DF3\u8FC7\u89C6\u9891\u3002");
+          if (["视频文件损坏", "网络错误导致视频下载中途失败"].some((s) => doc.documentElement.innerText.includes(s))) {
+            $console.error("检测到视频加载失败，即将跳过视频。");
+            lib.$message.error("检测到视频加载失败，即将跳过视频。");
             setTimeout(resolve, 3e3);
           }
         }, 3e3);
         const playFunction = async () => {
-          await waitForFaceRecognition();
-          await waitForNewFaceRecognition();
+          if (hasFaceRecognition())
+            await waitForFaceRecognition();
+          if (hasNewFaceRecognition())
+            await waitForNewFaceRecognition();
           if (media.ended === false) {
             await $.sleep(1e3);
             media.play();
@@ -15177,11 +15777,11 @@ ${content}</tr>
         media.addEventListener("pause", playFunction);
         media.addEventListener("ended", () => {
           media.removeEventListener("pause", playFunction);
-          $console.log("\u89C6\u9891\u64AD\u653E\u5B8C\u6BD5");
+          $console.log("视频播放完毕");
           clearInterval(reloadInterval);
           resolve();
         });
-        $console.log("\u89C6\u9891\u5F00\u59CB\u64AD\u653E");
+        $console.log("视频开始播放");
         media.volume = volume2;
         media.currentTime = 0;
         setTimeout(() => {
@@ -15210,14 +15810,13 @@ ${content}</tr>
       if (answererWrappers === void 0 || answererWrappers.length === 0) {
         return answerWrapperEmptyWarning(0);
       }
-      lib.$message.info({
-        content: lib.h("div", ["\u6B63\u5728\u7B54\u9898\u4E2D\uFF0C\u7B54\u9898\u7ED3\u679C\u8BF7\u524D\u5F80\uFF1A\u901A\u7528-\u641C\u7D22\u7ED3\u679C \u8FDB\u884C\u67E5\u770B"]),
-        duration: 10
-      });
-      $console.info("\u5F00\u59CB\u7AE0\u8282\u6D4B\u8BD5");
+      $console.info("开始章节测试");
+      const visual_state = CommonProject.scripts.render.cfg.visual;
       const frameWindow = frame.contentWindow;
       const { TiMu } = domSearchAll({ TiMu: ".TiMu" }, frameWindow.document);
+      CORSUtils.panelNormal();
       CommonProject.scripts.workResults.methods.init();
+      CORSUtils.pinWorkPanel();
       const chapterTestTaskQuestionTitleTransform = (titles) => {
         const removed = removeRedundantWords(
           titles.map((t2) => t2 ? optimizationElementWithImage(t2, true).innerText : "").join(","),
@@ -15250,7 +15849,7 @@ ${content}</tr>
               });
             });
           } else {
-            throw new Error("\u9898\u76EE\u4E3A\u7A7A\uFF0C\u8BF7\u67E5\u770B\u9898\u76EE\u662F\u5426\u4E3A\u7A7A\uFF0C\u6216\u8005\u5FFD\u7565\u6B64\u9898");
+            throw new Error("题目为空，请查看题目是否为空，或者忽略此题");
           }
         },
         work: async (ctx) => {
@@ -15326,11 +15925,11 @@ ${content}</tr>
             const type = typeInput ? getQuestionType(parseInt(typeInput.value)) : void 0;
             const commonSetting = CommonProject.scripts.settings.cfg;
             if (commonSetting["randomWork-choice"] && (type === "judgement" || type === "single" || type === "multiple")) {
-              $console.log("\u6B63\u5728\u968F\u673A\u4F5C\u7B54");
+              $console.log("正在随机作答");
               const option = options[Math.floor(Math.random() * options.length)];
               (_h = (_g = option == null ? void 0 : option.parentElement) == null ? void 0 : _g.querySelector("a,label")) == null ? void 0 : _h.click();
             } else if (commonSetting["randomWork-complete"] && type === "completion") {
-              $console.log("\u6B63\u5728\u968F\u673A\u4F5C\u7B54");
+              $console.log("正在随机作答");
               for (const option of options) {
                 const textarea = (_i = option == null ? void 0 : option.parentElement) == null ? void 0 : _i.querySelector("textarea");
                 const completeTexts = commonSetting["randomWork-completeTexts-textarea"].split("\n").filter(Boolean);
@@ -15344,7 +15943,7 @@ ${content}</tr>
                     textareaFrame.contentDocument.body.innerHTML = text;
                   }
                 } else {
-                  $console.error("\u8BF7\u8BBE\u7F6E\u968F\u673A\u586B\u7A7A\u7684\u6587\u6848");
+                  $console.error("请设置随机填空的文案");
                 }
                 await $.sleep(500);
               }
@@ -15358,16 +15957,16 @@ ${content}</tr>
             elements2.options.forEach((option) => {
               var _a;
               const opt = ((_a = option == null ? void 0 : option.textContent) == null ? void 0 : _a.trim()) || "";
-              if (opt.includes("\u5BF9") || opt.includes("\u9519"))
+              if (opt.includes("对") || opt.includes("错"))
                 ;
               else if (opt === "True") {
-                option.textContent = "\u221A";
+                option.textContent = "√";
               } else if (opt === "False") {
                 option.textContent = "x";
               } else {
                 const ri = option.querySelector(".ri");
                 const span = document.createElement("span");
-                span.innerText = ri ? "\u221A" : "\xD7";
+                span.innerText = ri ? "√" : "×";
                 option.appendChild(span);
               }
             });
@@ -15375,7 +15974,7 @@ ${content}</tr>
         }
       });
       const results = await worker.doWork();
-      const msg = `\u7B54\u9898\u5B8C\u6210\uFF0C\u5C06\u7B49\u5F85 ${stopSecondWhenFinish} \u79D2\u540E\u8FDB\u884C\u4FDD\u5B58\u6216\u63D0\u4EA4\u3002`;
+      const msg = `答题完成，将等待 ${stopSecondWhenFinish} 秒后进行保存或提交。`;
       $console.info(msg);
       lib.$message.info({ content: msg, duration: stopSecondWhenFinish });
       await $.sleep(stopSecondWhenFinish * 1e3);
@@ -15383,7 +15982,7 @@ ${content}</tr>
         type: upload,
         results,
         async callback(finishedRate, uploadable) {
-          const msg2 = `\u5B8C\u6210\u7387 ${finishedRate.toFixed(2)}% :  ${uploadable ? "3\u79D2\u540E\u5C06\u81EA\u52A8\u63D0\u4EA4" : "3\u79D2\u540E\u5C06\u81EA\u52A8\u4FDD\u5B58"} `;
+          const msg2 = `完成率 ${finishedRate.toFixed(2)}% :  ${uploadable ? "3秒后将自动提交" : "3秒后将自动保存"} `;
           $console.info(msg2);
           lib.$message.success({ content: msg2, duration: 3 });
           await $.sleep(3e3);
@@ -15399,6 +15998,9 @@ ${content}</tr>
           }
         }
       });
+      if (visual_state === "minimize" && CommonProject.scripts.render.cfg.visual !== "minimize") {
+        CORSUtils.panelMinimize();
+      }
       worker.emit("done");
     },
     async readPPTWithAudio(win) {
@@ -15446,22 +16048,38 @@ ${content}</tr>
     }
     return { finish: false };
   }
+  function hasFaceRecognition() {
+    const faces = lib.$$el("#fcqrimg", top$1 == null ? void 0 : top$1.document);
+    let active = false;
+    for (const face of faces) {
+      const src2 = face.getAttribute("src");
+      if (src2) {
+        active = true;
+        break;
+      }
+    }
+    return active;
+  }
+  function hasNewFaceRecognition() {
+    const faces = lib.$$el(".chapterVideoFaceMaskDiv", top$1 == null ? void 0 : top$1.document);
+    let active = false;
+    for (const face of faces) {
+      if (face.style.display !== "none") {
+        active = true;
+        break;
+      }
+    }
+    return active;
+  }
   function waitForNewFaceRecognition() {
     let notified = false;
     return new Promise((resolve) => {
       const interval = setInterval(() => {
-        const faces = lib.$$el(".chapterVideoFaceMaskDiv", top$1 == null ? void 0 : top$1.document);
-        let active = false;
-        for (const face of faces) {
-          if (face.style.display !== "none") {
-            active = true;
-            break;
-          }
-        }
+        const active = hasNewFaceRecognition();
         if (active) {
           if (!notified) {
             notified = true;
-            const msg = "\u68C0\u6D4B\u5230\u4EBA\u8138\u8BC6\u522B\uFF0C\u8BF7\u624B\u52A8\u8FDB\u884C\u8BC6\u522B\u540E\u811A\u672C\u624D\u4F1A\u7EE7\u7EED\u8FD0\u884C\u3002";
+            const msg = "检测到人脸识别，请手动进行识别后脚本才会继续运行。";
             if (CXProject.scripts.study.cfg.notifyWhenHasFaceRecognition) {
               CommonProject.scripts.settings.methods.notificationBySetting(msg, { duration: 0 });
             }
@@ -15479,19 +16097,11 @@ ${content}</tr>
     let notified = false;
     return new Promise((resolve) => {
       const interval = setInterval(() => {
-        const faces = lib.$$el("#fcqrimg", top$1 == null ? void 0 : top$1.document);
-        let active = false;
-        for (const face of faces) {
-          const src2 = face.getAttribute("src");
-          if (src2) {
-            active = true;
-            break;
-          }
-        }
+        const active = hasFaceRecognition();
         if (active) {
           if (!notified) {
             notified = true;
-            const msg = "\u68C0\u6D4B\u5230\u4EBA\u8138\u8BC6\u522B\uFF0C\u8BF7\u624B\u52A8\u8FDB\u884C\u8BC6\u522B\u540E\u811A\u672C\u624D\u4F1A\u7EE7\u7EED\u8FD0\u884C\u3002";
+            const msg = "检测到人脸识别，请手动进行识别后脚本才会继续运行。";
             if (CXProject.scripts.study.cfg.notifyWhenHasFaceRecognition) {
               CommonProject.scripts.settings.methods.notificationBySetting(msg, { duration: 0 });
             }
@@ -15506,38 +16116,26 @@ ${content}</tr>
     });
   }
   function answerWrapperEmptyWarning(duration) {
-    const setting = lib.h("button", { className: "base-style-button-secondary" }, "\u901A\u7528-\u5168\u5C40\u8BBE\u7F6E");
+    const setting = lib.h("button", { className: "base-style-button-secondary" }, "通用-全局设置");
     setting.onclick = () => CommonProject.scripts.render.methods.pin(CommonProject.scripts.settings);
     if (state$3.study.answererWrapperUnsetMessage === void 0) {
       state$3.study.answererWrapperUnsetMessage = lib.$message.warn({
-        content: lib.h("span", {}, ["\u68C0\u6D4B\u5230\u672A\u8BBE\u7F6E\u9898\u5E93\u914D\u7F6E\uFF0C\u5C06\u65E0\u6CD5\u81EA\u52A8\u7B54\u9898\uFF0C\u8BF7\u5207\u6362\u5230 ", setting, " \u9875\u9762\u8FDB\u884C\u914D\u7F6E\u3002"]),
+        content: lib.h("span", {}, ["检测到未设置题库配置，将无法自动答题，请切换到 ", setting, " 页面进行配置。"]),
         duration
       });
     }
   }
-  const checkChapterFinishedAndSkip = lib.cors.defineTopFunction("cx.checkChapterFinishedAndSkip", (is_in_last_tab) => {
-    var _a;
-    if (CXAnalyses.isCurrentChapterFinished() || is_in_last_tab) {
-      let start2 = false;
-      const jobs = Array.from((top$1 == null ? void 0 : top$1.document.querySelectorAll(".posCatalog_select:not(.firstLayer)")) || []);
-      for (const job of jobs) {
-        if (job.classList.contains("posCatalog_active")) {
-          start2 = true;
-          continue;
-        }
-        if (start2) {
-          if (job.querySelector(".icon_Completed") !== null) {
-            continue;
-          }
-          if (job.querySelector(".jobUnfinishCount") !== null) {
-            (_a = job.querySelector(".posCatalog_name")) == null ? void 0 : _a.click();
-            return true;
-          }
-        }
-      }
-    }
-    return false;
-  });
+  const CORSUtils = {
+    pinWorkPanel: lib.cors.defineTopFunction("cx.pin.work", () => {
+      CommonProject.scripts.render.methods.pin(CommonProject.scripts.workResults);
+    }),
+    panelNormal: lib.cors.defineTopFunction("cx.panel.normal", () => {
+      CommonProject.scripts.render.methods.normal();
+    }),
+    panelMinimize: lib.cors.defineTopFunction("cx.panel.minimize", () => {
+      CommonProject.scripts.render.methods.minimize();
+    })
+  };
   const state$2 = {
     study: {
       currentMedia: void 0,
@@ -15566,7 +16164,7 @@ ${content}</tr>
   let StudyLock = _StudyLock;
   StudyLock.auto_inc = 0;
   const IcveMoocProject = lib.Project.create({
-    name: "\u667A\u6167\u804C\u6559",
+    name: "智慧职教",
     domains: [
       "icve.com.cn",
       "ai.icve.com.cn",
@@ -15576,17 +16174,17 @@ ${content}</tr>
     ],
     scripts: {
       guide: new lib.Script({
-        name: "\u{1F4A1} \u4F7F\u7528\u63D0\u793A",
+        name: "💡 使用提示",
         matches: [
-          ["\u4E2A\u4EBA\u9996\u9875", "icve.com.cn/studycenter"],
-          ["\u5B66\u4E60\u9875\u9762", "icve.com.cn/study/directory"],
-          ["MOOC\u5B66\u9662-\u4E2A\u4EBA\u9996\u9875", "user.icve.com.cn"],
-          ["MOOC\u5B66\u9662-\u9996\u9875", "mooc.icve.com.cn"]
+          ["个人首页", "icve.com.cn/studycenter"],
+          ["学习页面", "icve.com.cn/study/directory"],
+          ["MOOC学院-个人首页", "user.icve.com.cn"],
+          ["MOOC学院-首页", "mooc.icve.com.cn"]
         ],
         namespace: "icve.guide",
         configs: {
           notes: {
-            defaultValue: lib.$ui.notes(["\u8BF7\u70B9\u51FB\u4EFB\u610F\u8BFE\u7A0B\u8FDB\u5165", "\u8FDB\u5165\u8BFE\u7A0B\u540E\u70B9\u51FB\u4EFB\u610F\u7AE0\u8282\u8FDB\u5165\uFF0C\u5373\u53EF\u81EA\u52A8\u5B66\u4E60"]).outerHTML
+            defaultValue: lib.$ui.notes(["请点击任意课程进入", "进入课程后点击任意章节进入，即可自动学习"]).outerHTML
           }
         },
         oncomplete() {
@@ -15594,11 +16192,11 @@ ${content}</tr>
         }
       }),
       studyCenter: new lib.Script({
-        name: "\u{1F5A5}\uFE0F \u667A\u6167\u804C\u6559-\u5B66\u4E60\u4E2D\u5FC3",
+        name: "🖥️ 智慧职教-学习中心",
         namespace: "icve.study.center",
         matches: [
-          ["\u5B66\u4E60\u4E2D\u5FC3\u9875\u9762", "/study/directory/dir_course.html"],
-          ["\u8BFE\u7A0B\u5217\u8868", "icve.com.cn/study/directory/directory_list.html"]
+          ["学习中心页面", "/study/directory/dir_course.html"],
+          ["课程列表", "icve.com.cn/study/directory/directory_list.html"]
         ],
         configs: {
           playbackRate,
@@ -15625,7 +16223,7 @@ ${content}</tr>
               );
             } catch (e) {
               console.error(e);
-              lib.$message.error("\u8BFE\u7A0B\u5217\u8868\u83B7\u53D6\u5931\u8D25\uFF0C\u8BF7\u5237\u65B0\u9875\u9762\u91CD\u8BD5\u3002");
+              lib.$message.error("课程列表获取失败，请刷新页面重试。");
               return;
             }
           }
@@ -15639,8 +16237,8 @@ ${content}</tr>
             const res = await Promise.race([waitForElement("video, audio"), waitForElement(".docBox")]);
             if (res) {
               const jobName = ((_a = document.querySelector(".tabsel.seled")) == null ? void 0 : _a.getAttribute("title")) || "-";
-              lib.$message.info("\u5F00\u59CB\u4EFB\u52A1\uFF1A" + jobName);
-              $console.log(`\u4EFB\u52A1 ${jobName} \u5F00\u59CB\u3002`);
+              lib.$message.info("开始任务：" + jobName);
+              $console.log(`任务 ${jobName} 开始。`);
               if (document.querySelector("video, audio")) {
                 const media = await waitForMedia();
                 state$2.study.currentMedia = media;
@@ -15650,7 +16248,7 @@ ${content}</tr>
                     console.log(document.hasFocus());
                     window.focus();
                     lib.$gm.unsafeWindow.jwplayer().onComplete(async () => {
-                      $console.log("\u89C6\u9891/\u97F3\u9891\u64AD\u653E\u5B8C\u6210\u3002");
+                      $console.log("视频/音频播放完成。");
                       await $.sleep(3e3);
                       resolve();
                     });
@@ -15671,10 +16269,10 @@ ${content}</tr>
                   }
                 });
               }
-              lib.$message.success(`\u4EFB\u52A1 ${jobName} \u5B8C\u6210\uFF0C\u4E09\u79D2\u540E\u4E0B\u4E00\u7AE0`);
-              $console.log(`\u4EFB\u52A1 ${jobName} \u5B8C\u6210\uFF0C\u4E09\u79D2\u540E\u4E0B\u4E00\u7AE0`);
+              lib.$message.success(`任务 ${jobName} 完成，三秒后下一章`);
+              $console.log(`任务 ${jobName} 完成，三秒后下一章`);
             } else {
-              $console.error(`\u4E0D\u652F\u6301\u7684\u4EFB\u52A1\u9875\u9762\uFF0C\u8BF7\u8DDF\u4F5C\u8005\u8FDB\u884C\u53CD\u9988\u3002\u4E09\u79D2\u540E\u4E0B\u4E00\u7AE0`);
+              $console.error(`不支持的任务页面，请跟作者进行反馈。三秒后下一章`);
             }
             await $.sleep(3e3);
             next2();
@@ -15685,10 +16283,10 @@ ${content}</tr>
               const nextUrl = this.cfg.currentCourseUrlList[index + 1];
               if (new URL(url).hash === new URL(location.href).hash) {
                 if (!nextUrl) {
-                  lib.$modal.alert({ content: "\u5168\u90E8\u4EFB\u52A1\u5DF2\u5B8C\u6210" });
-                  CommonProject.scripts.settings.methods.notificationBySetting("\u5168\u90E8\u4EFB\u52A1\u70B9\u5DF2\u5B8C\u6210\uFF01", {
+                  lib.$modal.alert({ content: "全部任务已完成" });
+                  CommonProject.scripts.settings.methods.notificationBySetting("全部任务点已完成！", {
                     duration: 0,
-                    extraTitle: "\u667A\u6167\u804C\u6559\u5B66\u4E60\u811A\u672C"
+                    extraTitle: "智慧职教学习脚本"
                   });
                   return;
                 } else {
@@ -15701,32 +16299,32 @@ ${content}</tr>
         }
       }),
       study: new lib.Script({
-        name: "\u{1F5A5}\uFE0F MOOC\u5B66\u9662-\u8BFE\u7A0B\u5B66\u4E60",
+        name: "🖥️ MOOC学院-课程学习",
         namespace: "icve.study.main",
-        matches: [["\u8BFE\u7A0B\u5B66\u4E60\u9875\u9762", "/learnspace/learn/learn/templateeight/index.action"]],
+        matches: [["课程学习页面", "/learnspace/learn/learn/templateeight/index.action"]],
         configs: {
           notes: {
             defaultValue: lib.$ui.notes([
-              "\u5982\u679C\u89C6\u9891\u65E0\u6CD5\u64AD\u653E\uFF0C\u53EF\u4EE5\u624B\u52A8\u70B9\u51FB\u5176\u4ED6\u4EFB\u52A1\u8DF3\u8FC7\u89C6\u9891\u3002",
-              "\u7ECF\u8FC7\u6D4B\u8BD5\u89C6\u9891\u500D\u901F\u6700\u591A\u4E8C\u500D\uFF0C\u5426\u5219\u4F1A\u5224\u5B9A\u65E0\u6548\u3002",
-              "\u624B\u52A8\u8FDB\u5165\u4F5C\u4E1A\u9875\u9762\u624D\u80FD\u4F7F\u7528\u81EA\u52A8\u7B54\u9898\u3002"
+              "如果视频无法播放，可以手动点击其他任务跳过视频。",
+              "经过测试视频倍速最多二倍，否则会判定无效。",
+              "手动进入作业页面才能使用自动答题。"
             ]).outerHTML
           },
           playbackRate,
           volume,
           restudy,
           showScrollBar: {
-            label: "\u663E\u793A\u53F3\u4FA7\u6EDA\u52A8\u6761",
+            label: "显示右侧滚动条",
             attrs: { type: "checkbox" },
             defaultValue: true
           },
           expandAll: {
-            label: "\u5C55\u5F00\u6240\u6709\u7AE0\u8282",
+            label: "展开所有章节",
             attrs: { type: "checkbox" },
             defaultValue: true
           },
           switchPeriod: {
-            label: "\u4E0B\u4E00\u7AE0\u8282\u5207\u6362\u95F4\u9694\uFF08\u79D2\uFF09",
+            label: "下一章节切换间隔（秒）",
             defaultValue: 10,
             attrs: {
               type: "number",
@@ -15741,8 +16339,8 @@ ${content}</tr>
           state$2.study.playbackRateWarningListenerId = this.onConfigChange("playbackRate", (playbackRate2) => {
             if (playbackRate2 > 4) {
               lib.$modal.alert({
-                title: "\u26A0\uFE0F\u9AD8\u500D\u901F\u8B66\u544A",
-                content: lib.$ui.notes(["\u9AD8\u500D\u901F\u53EF\u80FD\u5BFC\u81F4\u89C6\u9891\u65E0\u6CD5\u5B8C\u6210\uFF01"])
+                title: "⚠️高倍速警告",
+                content: lib.$ui.notes(["高倍速可能导致视频无法完成！"])
               });
             }
           }) || 0;
@@ -15760,12 +16358,12 @@ ${content}</tr>
           if (mainContentWin) {
             lib.$modal.confirm({
               content: lib.h("div", [
-                "\u662F\u5426\u5F00\u59CB\u81EA\u52A8\u5B66\u4E60\u5F53\u524D\u7AE0\u8282\uFF1F",
+                "是否开始自动学习当前章节？",
                 lib.h("br"),
-                "\u4F60\u4E5F\u53EF\u4EE5\u9009\u62E9\u4EFB\u610F\u7684\u7AE0\u8282\u8FDB\u884C\u70B9\u51FB\uFF0C\u811A\u672C\u4F1A\u81EA\u52A8\u5B66\u4E60\uFF0C\u5E76\u4E00\u76F4\u5F80\u4E0B\u5BFB\u627E\u7AE0\u8282\u3002"
+                "你也可以选择任意的章节进行点击，脚本会自动学习，并一直往下寻找章节。"
               ]),
-              cancelButtonText: "\u6211\u60F3\u624B\u52A8\u9009\u62E9\u7AE0\u8282",
-              confirmButtonText: "\u5F00\u59CB\u5B66\u4E60",
+              cancelButtonText: "我想手动选择章节",
+              confirmButtonText: "开始学习",
               async onConfirm() {
                 study2(StudyLock.getLock());
                 scrollToJob();
@@ -15786,10 +16384,10 @@ ${content}</tr>
                 if (job.getAttribute("itemtype") === "exam") {
                   return lib.$message.info({
                     duration: 60,
-                    content: "\u68C0\u6D4B\u5230\u60A8\u624B\u52A8\u9009\u62E9\u4E86\u4F5C\u4E1A/\u8003\u8BD5\u7AE0\u8282\uFF0C\u5C06\u4E0D\u4F1A\u81EA\u52A8\u8DF3\u8F6C\uFF0C\u8BF7\u5B8C\u6210\u540E\u624B\u52A8\u9009\u62E9\u5176\u4ED6\u7AE0\u8282\uFF0C\u811A\u672C\u4F1A\u81EA\u52A8\u5B66\u4E60\u3002"
+                    content: "检测到您手动选择了作业/考试章节，将不会自动跳转，请完成后手动选择其他章节，脚本会自动学习。"
                   });
                 } else {
-                  lib.$message.info("\u68C0\u6D4B\u5230\u7AE0\u8282\u5207\u6362\uFF0C\u5373\u5C06\u81EA\u52A8\u5B66\u4E60...");
+                  lib.$message.info("检测到章节切换，即将自动学习...");
                 }
               }
               setTimeout(() => {
@@ -15808,7 +16406,7 @@ ${content}</tr>
             if (win) {
               const doc = win.document;
               if (iframe.src.includes("content_video.action") || iframe.src.includes("content_audio.action")) {
-                $console.log("\u89C6\u9891/\u97F3\u9891\u64AD\u653E\u4E2D...");
+                $console.log("视频/音频播放中...");
                 try {
                   const media = await waitForMedia({ root: doc });
                   state$2.study.currentMedia = media;
@@ -15818,7 +16416,7 @@ ${content}</tr>
                   await new Promise((resolve, reject) => {
                     try {
                       win.jwplayer().onComplete(async () => {
-                        $console.log("\u89C6\u9891/\u97F3\u9891\u64AD\u653E\u5B8C\u6210\u3002");
+                        $console.log("视频/音频播放完成。");
                         await $.sleep(3e3);
                         resolve();
                       });
@@ -15844,7 +16442,7 @@ ${content}</tr>
                 await $.sleep(5e3);
               }
             }
-            $console.log(this.cfg.switchPeriod + " \u79D2\u540E\u5207\u6362\u4E0B\u4E00\u7AE0\u8282\u3002");
+            $console.log(this.cfg.switchPeriod + " 秒后切换下一章节。");
             await $.sleep(this.cfg.switchPeriod * 1e3);
             if (studyLock.canStudy()) {
               let nextEl;
@@ -15856,7 +16454,7 @@ ${content}</tr>
                   isBellowCurrentJob = true;
                 } else if (isBellowCurrentJob) {
                   if (job.querySelector(".done_icon_show") === null || this.cfg.restudy) {
-                    $console.log("\u4E0B\u4E00\u7AE0\uFF1A", job.title || ((_a2 = lib.$el(".s_pointti", job)) == null ? void 0 : _a2.title) || "\u672A\u77E5");
+                    $console.log("下一章：", job.title || ((_a2 = lib.$el(".s_pointti", job)) == null ? void 0 : _a2.title) || "未知");
                     nextEl = job;
                     break;
                   }
@@ -15866,10 +16464,10 @@ ${content}</tr>
                 nextEl.click();
                 scrollToJob();
               } else {
-                lib.$modal.alert({ content: "\u5168\u90E8\u4EFB\u52A1\u5DF2\u5B8C\u6210" });
-                CommonProject.scripts.settings.methods.notificationBySetting("\u5168\u90E8\u4EFB\u52A1\u70B9\u5DF2\u5B8C\u6210\uFF01", {
+                lib.$modal.alert({ content: "全部任务已完成" });
+                CommonProject.scripts.settings.methods.notificationBySetting("全部任务点已完成！", {
                   duration: 0,
-                  extraTitle: "\u667A\u6167\u804C\u6559\u5B66\u4E60\u811A\u672C"
+                  extraTitle: "智慧职教学习脚本"
                 });
               }
             }
@@ -15877,20 +16475,20 @@ ${content}</tr>
         }
       }),
       work: new lib.Script({
-        name: "\u270D\uFE0F \u4F5C\u4E1A\u8003\u8BD5\u811A\u672C",
-        matches: [["\u4F5C\u4E1A\u8003\u8BD5\u9875\u9762", "/exam"]],
+        name: "✍️ 作业考试脚本",
+        matches: [["作业考试页面", "/exam"]],
         namespace: "icve.work",
         configs: {
           notes: {
             defaultValue: lib.$ui.notes([
-              "\u81EA\u52A8\u7B54\u9898\u524D\u8BF7\u5728 \u201C\u901A\u7528-\u5168\u5C40\u8BBE\u7F6E\u201D \u4E2D\u8BBE\u7F6E\u9898\u5E93\u914D\u7F6E\u3002",
-              "\u53EF\u4EE5\u642D\u914D \u201C\u901A\u7528-\u5728\u7EBF\u641C\u9898\u201D \u4E00\u8D77\u4F7F\u7528\u3002",
-              "\u8BF7\u624B\u52A8\u8FDB\u5165\u4F5C\u4E1A\u8003\u8BD5\u9875\u9762\u624D\u80FD\u4F7F\u7528\u81EA\u52A8\u7B54\u9898\u3002"
+              "自动答题前请在 “通用-全局设置” 中设置题库配置。",
+              "可以搭配 “通用-在线搜题” 一起使用。",
+              "请手动进入作业考试页面才能使用自动答题。"
             ]).outerHTML
           }
         },
         async oncomplete() {
-          lib.$message.warn({ content: "\u81EA\u52A8\u7B54\u9898\u65F6\u8BF7\u52FF\u5207\u6362\u9898\u76EE\uFF0C\u5426\u5219\u53EF\u80FD\u5BFC\u81F4\u91CD\u590D\u641C\u9898\u6216\u8005\u811A\u672C\u5361\u4E3B\u3002", duration: 0 });
+          lib.$message.warn({ content: "自动答题时请勿切换题目，否则可能导致重复搜题或者脚本卡主。", duration: 0 });
           const resetToBegin = () => {
             var _a;
             (_a = document.querySelectorAll(`.sheet_nums [id*="sheetSeq"]`).item(0)) == null ? void 0 : _a.click();
@@ -15906,10 +16504,10 @@ ${content}</tr>
         }
       }),
       workDispatcher: new lib.Script({
-        name: "\u4F5C\u4E1A\u8C03\u5EA6\u811A\u672C",
+        name: "作业调度脚本",
         matches: [
-          ["\u4F5C\u4E1A\u8FDB\u5165\u9875\u9762", "/platformwebapi/student/exam/"],
-          ["\u786E\u8BA4\u4F5C\u4E1A\u9875\u9762", "/student/exam/studentExam_studentInfo.action"]
+          ["作业进入页面", "/platformwebapi/student/exam/"],
+          ["确认作业页面", "/student/exam/studentExam_studentInfo.action"]
         ],
         hideInPanel: true,
         oncomplete() {
@@ -15928,25 +16526,25 @@ ${content}</tr>
         }
       }),
       "ai-study": new lib.Script({
-        name: "\u{1F5A5}\uFE0F AI\u8BFE\u7A0B",
+        name: "🖥️ AI课程",
         namespace: "icve.ai.study",
         matches: [
-          ["\u8BFE\u7A0B\u9875\u9762", "ai.icve.com.cn/app/coursedetails-excellent"],
-          ["\u5B66\u4E60\u9875\u9762", "ai.icve.com.cn/excellent-study"]
+          ["课程页面", "ai.icve.com.cn/app/coursedetails-excellent"],
+          ["学习页面", "ai.icve.com.cn/excellent-study"]
         ],
         configs: {
           notes: {
             defaultValue: lib.$ui.notes([
               [
-                "\u5982\u679C\u811A\u672C\u5361\u6B7B\u6216\u8005\u60A8\u4E0D\u60F3\u5B66\u4E60\uFF0C",
-                "\u53EF\u4EE5\u70B9\u51FB\u5176\u4ED6\u4EFB\u610F\u7AE0\u8282\u7EE7\u7EED\u8FDB\u884C\u5B66\u4E60\u3002",
-                "PPT\u8BF7\u52FF\u52A0\u5FEB\u70B9\u51FB\uFF0C\u5426\u5219\u53EF\u80FD\u65E0\u6CD5\u8BB0\u5F55\u5B66\u4E60\u8FDB\u5EA6\u3002"
+                "如果脚本卡死或者您不想学习，",
+                "可以点击其他任意章节继续进行学习。",
+                "PPT请勿加快点击，否则可能无法记录学习进度。"
               ]
             ]).outerHTML
           },
           volume,
           playbackRate: {
-            label: "\u89C6\u9891\u500D\u901F",
+            label: "视频倍速",
             tag: "select",
             options: [1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.5, 4, 6, 8, 16].map((rate) => [
               rate.toString(),
@@ -15955,9 +16553,9 @@ ${content}</tr>
             defaultValue: "1"
           },
           autoOpenAllChapter: {
-            label: "\u81EA\u52A8\u6253\u5F00\u5168\u90E8\u7AE0\u8282",
+            label: "自动打开全部章节",
             attrs: {
-              title: "\u5982\u679C\u6CA1\u6709\u6253\u5F00\u5168\u90E8\u7AE0\u8282\uFF0C\u90A3\u4E48\u5F53\u4EFB\u52A1\u70B9\u8FBE\u5230\u5F53\u524D\u7AE0\u8282\u6700\u540E\u4E00\u4E2A\u65F6\u5C06\u65E0\u6CD5\u8DF3\u8F6C\u5230\u5176\u4ED6\u7AE0\u8282\u5217\u8868\uFF01",
+              title: "如果没有打开全部章节，那么当任务点达到当前章节最后一个时将无法跳转到其他章节列表！",
               type: "checkbox"
             },
             defaultValue: true
@@ -16020,13 +16618,13 @@ ${content}</tr>
           await closeStudyContinueDialog();
           await waitForLoad2();
           await $.sleep(3e3);
-          $msg_and_log$1("info", "\u5373\u5C06\u6253\u5F00\u5168\u90E8\u7AE0\u8282\u5217\u8868\uFF0C\u8BF7\u7A0D\u7B49");
+          $msg_and_log$1("info", "即将打开全部章节列表，请稍等");
           const openAllChapter = async () => {
             var _a;
             const model = lib.$modal.simple({
               maskCloseable: false,
               footer: void 0,
-              content: "\u6B63\u5728\u5C55\u5F00\u5168\u90E8\u7AE0\u8282\u5217\u8868\uFF0C\u8BF7\u8010\u5FC3\u7B49\u5F85\u4E0D\u8981\u64CD\u4F5C..."
+              content: "正在展开全部章节列表，请耐心等待不要操作..."
             });
             const titles = Array.from(document.querySelectorAll(".one-title")).filter(
               (el) => !el.querySelector(".zhankai")
@@ -16059,7 +16657,7 @@ ${content}</tr>
                 await waitForChapterOpen(title);
                 await $.sleep(1e3);
               } catch (e) {
-                $console.error("\u6253\u5F00\u7AE0\u8282\u5931\u8D25", e);
+                $console.error("打开章节失败", e);
               }
             }
             model == null ? void 0 : model.remove();
@@ -16074,7 +16672,7 @@ ${content}</tr>
           });
           const study2 = async (id) => {
             var _a;
-            $msg_and_log$1("info", "\u5373\u5C06\u5F00\u59CB\u5B66\u4E60\uFF1A" + (((_a = lib.$el(".contentBox")) == null ? void 0 : _a.__vue__.nrdata.name) || "\u672A\u77E5\u4EFB\u52A1\u70B9"));
+            $msg_and_log$1("info", "即将开始学习：" + (((_a = lib.$el(".contentBox")) == null ? void 0 : _a.__vue__.nrdata.name) || "未知任务点"));
             await $.sleep(3e3);
             await (async () => {
               var _a2;
@@ -16082,18 +16680,18 @@ ${content}</tr>
               active == null ? void 0 : active.focus();
               active == null ? void 0 : active.scrollIntoView({ behavior: "smooth", block: "center" });
               if ((active == null ? void 0 : active.querySelector(".wc")) && !this.cfg.restudy) {
-                return $msg_and_log$1("info", "\u5F53\u524D\u4EFB\u52A1\u5DF2\u5B8C\u6210\uFF0C\u5373\u5C06\u8DF3\u8FC7");
+                return $msg_and_log$1("info", "当前任务已完成，即将跳过");
               }
               const vue = (_a2 = lib.$el(".FilePreview")) == null ? void 0 : _a2.__vue__;
               const img = lib.$el(".ql-editor");
               const work2 = lib.$el(".shiti");
               if (work2) {
-                return $msg_and_log$1("warn", "\u68C0\u6D4B\u5230\u5F53\u524D\u4E3A\u4F5C\u4E1A\u4EFB\u52A1\uFF0C\u8BF7\u5B8C\u6210\u8BFE\u7A0B\u540E\u624B\u52A8\u8FDB\u5165\u81EA\u52A8\u7B54\u9898\u3002");
+                return $msg_and_log$1("warn", "检测到当前为作业任务，请完成课程后手动进入自动答题。");
               } else if (img) {
-                return $msg_and_log$1("warn", "\u68C0\u6D4B\u5230\u5F53\u524D\u4E3A\u56FE\u7247\u4EFB\u52A1\uFF0C\u5373\u5C06\u8DF3\u8FC7");
+                return $msg_and_log$1("warn", "检测到当前为图片任务，即将跳过");
               } else {
                 if (!vue) {
-                  return lib.$message.error({ content: "\u83B7\u53D6\u8BFE\u7A0B\u6570\u636E\u5931\u8D25\uFF0C\u6216\u8005\u672A\u77E5\u4EFB\u52A1\u70B9\uFF0C\u5373\u5C06\u8DF3\u8FC7" });
+                  return lib.$message.error({ content: "获取课程数据失败，或者未知任务点，即将跳过" });
                 }
                 const watchOffice = async () => {
                   const total = vue.photoList.length;
@@ -16104,7 +16702,7 @@ ${content}</tr>
                     await $.sleep(3e3);
                   }
                 };
-                lib.$message.info("\u5F00\u59CB\u5B66\u4E60");
+                lib.$message.info("开始学习");
                 if (["video", "audio"].includes(vue.curType)) {
                   await closeStudyContinueDialog();
                   await watchMedia$2();
@@ -16114,7 +16712,7 @@ ${content}</tr>
                     return;
                   await $.sleep(1e3);
                 } else {
-                  $msg_and_log$1("warn", "\u672A\u77E5\u7684\u4EFB\u52A1\u70B9\uFF0C\u5373\u5C06\u8DF3\u8FC7");
+                  $msg_and_log$1("warn", "未知的任务点，即将跳过");
                 }
               }
             })();
@@ -16122,9 +16720,9 @@ ${content}</tr>
               return;
             const next2 = getNext();
             if (!next2) {
-              return $msg_and_log$1("warn", "\u6CA1\u6709\u627E\u5230\u4E0B\u4E00\u7AE0\u8282\uFF01");
+              return $msg_and_log$1("warn", "没有找到下一章节！");
             }
-            $msg_and_log$1("info", "\u5373\u5C06\u8FDB\u5165\u4E0B\u4E00\u7AE0\u8282");
+            $msg_and_log$1("info", "即将进入下一章节");
             await $.sleep(3e3);
             if (id !== study_id)
               return;
@@ -16143,21 +16741,21 @@ ${content}</tr>
         }
       }),
       "ai-work": new lib.Script({
-        name: "\u270D\uFE0F AI\u4F5C\u4E1A",
+        name: "✍️ AI作业",
         namespace: "icve.ai.work",
-        matches: [["\u4F5C\u4E1A\u9875\u9762", "ai.icve.com.cn/preview-exam"]],
+        matches: [["作业页面", "ai.icve.com.cn/preview-exam"]],
         configs: {
           notes: {
             defaultValue: lib.$ui.notes([
-              "\u81EA\u52A8\u7B54\u9898\u524D\u8BF7\u5728 \u201C\u901A\u7528-\u5168\u5C40\u8BBE\u7F6E\u201D \u4E2D\u8BBE\u7F6E\u9898\u5E93\u914D\u7F6E\u3002",
-              "\u53EF\u4EE5\u642D\u914D \u201C\u901A\u7528-\u5728\u7EBF\u641C\u9898\u201D \u4E00\u8D77\u4F7F\u7528\u3002",
-              "\u8BF7\u624B\u52A8\u8FDB\u5165\u4F5C\u4E1A\u8003\u8BD5\u9875\u9762\u624D\u80FD\u4F7F\u7528\u81EA\u52A8\u7B54\u9898\u3002",
-              "\u81EA\u52A8\u7B54\u9898\u65F6\u8BF7\u52FF\u5207\u6362\u9898\u76EE\uFF0C\u5426\u5219\u53EF\u80FD\u5BFC\u81F4\u91CD\u590D\u641C\u9898\u6216\u8005\u811A\u672C\u5361\u4E3B\uFF01"
+              "自动答题前请在 “通用-全局设置” 中设置题库配置。",
+              "可以搭配 “通用-在线搜题” 一起使用。",
+              "请手动进入作业考试页面才能使用自动答题。",
+              "自动答题时请勿切换题目，否则可能导致重复搜题或者脚本卡主！"
             ]).outerHTML
           }
         },
         oncomplete() {
-          lib.$message.warn({ content: "\u81EA\u52A8\u7B54\u9898\u65F6\u8BF7\u52FF\u5207\u6362\u9898\u76EE\uFF0C\u5426\u5219\u53EF\u80FD\u5BFC\u81F4\u91CD\u590D\u641C\u9898\u6216\u8005\u811A\u672C\u5361\u4E3B\u3002", duration: 0 });
+          lib.$message.warn({ content: "自动答题时请勿切换题目，否则可能导致重复搜题或者脚本卡主。", duration: 0 });
           const resetToBegin = () => {
             var _a;
             (_a = document.querySelectorAll(`.list-box span`).item(0)) == null ? void 0 : _a.click();
@@ -16201,7 +16799,7 @@ ${content}</tr>
     });
   }
   function work({ answererWrappers, period, thread, answerSeparators, answerMatchMode }) {
-    lib.$message.info("\u5F00\u59CB\u4F5C\u4E1A");
+    lib.$message.info("开始作业");
     CommonProject.scripts.workResults.methods.init();
     console.log({ answererWrappers, period, thread });
     const titleTransform = (titles) => {
@@ -16247,14 +16845,14 @@ ${content}</tr>
             });
           });
         } else {
-          throw new Error("\u9898\u76EE\u4E3A\u7A7A\uFF0C\u8BF7\u67E5\u770B\u9898\u76EE\u662F\u5426\u4E3A\u7A7A\uFF0C\u6216\u8005\u5FFD\u7565\u6B64\u9898");
+          throw new Error("题目为空，请查看题目是否为空，或者忽略此题");
         }
       },
       async work(ctx) {
         const options = ctx.elements.options;
         const type = getType(options);
         if (!type) {
-          throw new Error("\u65E0\u6CD5\u83B7\u53D6\u9898\u76EE\u7C7B\u578B\uFF01");
+          throw new Error("无法获取题目类型！");
         }
         if (type === "fill-blank") {
           const inputs = options.map((o) => Array.from(o.querySelectorAll(".fillblank_input input"))).flat();
@@ -16333,14 +16931,14 @@ ${content}</tr>
           await $.sleep(1e3);
         }
       }
-      lib.$message.success({ content: "\u4F5C\u4E1A/\u8003\u8BD5\u5B8C\u6210\uFF0C\u8BF7\u81EA\u884C\u68C0\u67E5\u540E\u4FDD\u5B58\u6216\u63D0\u4EA4\u3002", duration: 0 });
+      lib.$message.success({ content: "作业/考试完成，请自行检查后保存或提交。", duration: 0 });
       worker.emit("done");
       CommonProject.scripts.workResults.cfg.questionPositionSyncHandlerType = "icve";
     })();
     return worker;
   }
   function aiWork({ answererWrappers, period, thread, answerSeparators, answerMatchMode }) {
-    lib.$message.info("\u5F00\u59CB\u4F5C\u4E1A");
+    lib.$message.info("开始作业");
     CommonProject.scripts.workResults.methods.init();
     console.log({ answererWrappers, period, thread });
     const titleTransform = (titles) => {
@@ -16382,7 +16980,7 @@ ${content}</tr>
             });
           });
         } else {
-          throw new Error("\u9898\u76EE\u4E3A\u7A7A\uFF0C\u8BF7\u67E5\u770B\u9898\u76EE\u662F\u5426\u4E3A\u7A7A\uFF0C\u6216\u8005\u5FFD\u7565\u6B64\u9898");
+          throw new Error("题目为空，请查看题目是否为空，或者忽略此题");
         }
       },
       work: {
@@ -16433,7 +17031,7 @@ ${content}</tr>
           await $.sleep(1e3);
         }
       }
-      lib.$message.success({ content: "\u4F5C\u4E1A/\u8003\u8BD5\u5B8C\u6210\uFF0C\u8BF7\u81EA\u884C\u68C0\u67E5\u540E\u4FDD\u5B58\u6216\u63D0\u4EA4\u3002", duration: 0 });
+      lib.$message.success({ content: "作业/考试完成，请自行检查后保存或提交。", duration: 0 });
       worker.emit("done");
       CommonProject.scripts.workResults.cfg.questionPositionSyncHandlerType = "icve";
     })();
@@ -16462,7 +17060,7 @@ ${content}</tr>
       setTimeout(() => {
         clearInterval(interval);
         resolve();
-        console.log("\u672A\u627E\u5230\u5F39\u7A97\uFF0C\u7EE7\u7EED\u6267\u884C");
+        console.log("未找到弹窗，继续执行");
       }, 60 * 1e3);
     });
   }
@@ -16481,7 +17079,7 @@ ${content}</tr>
       setTimeout(() => {
         clearInterval(interval);
         resolve();
-        console.log("\u672A\u627E\u5230\u5F39\u7A97\uFF0C\u7EE7\u7EED\u6267\u884C");
+        console.log("未找到弹窗，继续执行");
       }, 60 * 1e3);
     });
   }
@@ -16491,13 +17089,13 @@ ${content}</tr>
     media: null
   };
   const work_pages = [
-    ["\u8D44\u6E90\u5E93keep\u4F5C\u4E1A\u9875\u9762", "study/spockeepTest"],
-    ["\u8D44\u6E90\u5E93job\u4F5C\u4E1A\u9875\u9762", "study/spocjobTest"],
-    ["\u8D44\u6E90\u5E93\u8003\u8BD5", "study/spoctest"],
-    ["\u4F5C\u4E1A\u9875\u9762", "icve-study/coursePreview/jobTes"],
-    ["\u8003\u8BD5\u9875\u9762", "icve-study/coursePreview/test"],
-    ["\u8003\u8BD5\u9875\u9762", "icve-study/test"],
-    ["\u8D44\u6E90\u5E93\u6D4B\u9A8C\u9875\u9762", "icve-study/coursePreview/keepTest"]
+    ["资源库keep作业页面", "study/spockeepTest"],
+    ["资源库job作业页面", "study/spocjobTest"],
+    ["资源库考试", "study/spoctest"],
+    ["作业页面", "icve-study/coursePreview/jobTes"],
+    ["考试页面", "icve-study/coursePreview/test"],
+    ["考试页面", "icve-study/test"],
+    ["资源库测验页面", "icve-study/coursePreview/keepTest"]
   ];
   const isWork = () => {
     return window.location.href.includes("icve-study/coursePreview/jobTes") || window.location.href.includes("icve-study/coursePreview/keepTest") || window.location.href.includes("study/spockeepTest") || window.location.href.includes("study/spocjobTest");
@@ -16506,37 +17104,53 @@ ${content}</tr>
     return window.location.href.includes("icve-study/coursePreview/test") || window.location.href.includes("icve-study/test") || window.location.href.includes("study/spoctest");
   };
   const ZJYProject = lib.Project.create({
-    name: "\u804C\u6559\u4E91",
+    name: "职教云",
     domains: ["icve.com.cn", "zjy2.icve.com.cn", "zyk.icve.com.cn"],
     scripts: {
       guide: new lib.Script({
-        name: "\u{1F5A5}\uFE0F \u4F7F\u7528\u63D0\u793A",
+        name: "🖥️ 使用提示",
         matches: [
-          ["\u5B66\u4E60\u9875\u9762", "zjy2.icve.com.cn/study"],
-          ["\u8D44\u6E90\u5E93", "zyk.icve.com.cn/icve-study/"]
+          ["学习页面", "zjy2.icve.com.cn/study"],
+          ["资源库", "zyk.icve.com.cn/icve-study/"]
         ],
         namespace: "zjy.study.guide",
         configs: {
           notes: {
-            defaultValue: "\u8BF7\u70B9\u51FB\u4EFB\u610F\u7AE0\u8282\uFF0C\u8FDB\u5165\u5B66\u4E60\u3002"
+            defaultValue: "请点击任意章节，进入学习。"
           }
         }
       }),
       dispatcher: new lib.Script({
-        name: "\u8C03\u5EA6\u5668",
+        name: "调度器",
         matches: [
-          ["\u5B66\u4E60\u9875\u9762", "zjy2.icve.com.cn/study"],
-          ["\u8D44\u6E90\u5E93", "zyk.icve.com.cn/icve-study/"]
+          ["学习页面", "zjy2.icve.com.cn/study"],
+          ["资源库", "zyk.icve.com.cn/icve-study/"],
+          ["内容资源页面", "zjy2.icve.com.cn/study/studentFast/classroomNow"],
+          ["在线课堂学习页面", "zjy2.icve.com.cn/study/studentFast/courseware"]
         ],
         hideInPanel: true,
         methods() {
           return {
-            dispatch: () => {
-              if ([
+            dispatch: async () => {
+              var _a, _b, _c;
+              if (["zjy2.icve.com.cn/study/studentFast/classroomNow"].some((i) => window.location.href.includes(i))) {
+                await waitForElement(".classroom_activities .active_list");
+                const courseData = getCourseDataInClassroomNowPage();
+                console.log(courseData);
+                const courseId = ((_c = (_b = (_a = document.querySelector(".teacherLayout")) == null ? void 0 : _a.__vue__) == null ? void 0 : _b.courseInfo) == null ? void 0 : _c.id) || "";
+                if (!courseData || !courseId) {
+                  return;
+                }
+                ZJYProject.scripts.study.cfg.currentCourseId = courseId;
+                ZJYProject.scripts.study.cfg.courseList = courseData;
+                lib.$message.success("课程数据获取成功，请点击课程章节开始学习");
+              } else if ([
+                "zyk.icve.com.cn/icve-study/coursePreview/courseware",
                 "zjy2.icve.com.cn/study/coursePreview/spoccourseIndex/courseware",
-                "zyk.icve.com.cn/icve-study/coursePreview/courseware"
+                "zjy2.icve.com.cn/study/studentFast/courseware"
               ].some((i) => window.location.href.includes(i))) {
-                ZJYProject.scripts.study.methods.main();
+                const isClassroomNowStudy = location.href.includes("zjy2.icve.com.cn/study/studentFast/courseware");
+                ZJYProject.scripts.study.methods.main(isClassroomNowStudy ? "classroomNow" : "normal");
               } else if (work_pages.map(([_, p]) => p).some((i) => window.location.href.includes(i))) {
                 ZJYProject.scripts.work.methods.main();
               }
@@ -16554,27 +17168,33 @@ ${content}</tr>
       }),
       study: new lib.Script({
         matches: [
-          ["\u5B66\u4E60\u9875\u9762", "zjy2.icve.com.cn/study/coursePreview/spoccourseIndex/courseware"],
-          ["\u8D44\u6E90\u5E93\u5B66\u4E60\u9875\u9762", "zyk.icve.com.cn/icve-study/coursePreview/courseware"]
+          ["学习页面", "zjy2.icve.com.cn/study/coursePreview/spoccourseIndex/courseware"],
+          ["在线课堂学习页面", "zjy2.icve.com.cn/studentFast/courseware"],
+          ["资源库学习页面", "zyk.icve.com.cn/icve-study/coursePreview/courseware"]
         ],
-        name: "\u270D\uFE0F \u8BFE\u7A0B\u5B66\u4E60",
+        name: "✍️ 课程学习",
         namespace: "zjy.study.main",
         configs: {
           notes: {
             defaultValue: lib.$ui.notes([
-              ["\u5982\u679C\u811A\u672C\u5361\u6B7B\u6216\u8005\u60A8\u4E0D\u60F3\u5B66\u4E60\uFF0C", "\u53EF\u4EE5\u70B9\u51FB\u5176\u4ED6\u4EFB\u610F\u7AE0\u8282\u7EE7\u7EED\u8FDB\u884C\u5B66\u4E60\u3002"],
-              "\u63D0\u793A\uFF1A\u804C\u6559\u4E91\u65E0\u6CD5\u4F7F\u7528\u500D\u901F\u3002"
+              ["如果脚本卡死或者您不想学习，", "可以点击其他任意章节继续进行学习。"],
+              "提示：职教云无法使用倍速。"
             ]).outerHTML
           },
           volume,
           playbackRate: {
-            label: "\u89C6\u9891\u500D\u901F",
+            label: "视频倍速",
             tag: "select",
             options: [1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.5, 4, 6, 8].map((rate) => [
               rate.toString(),
               rate + " x"
             ]),
             defaultValue: "1"
+          },
+          pptReadPeriod: {
+            label: "PPT 阅读每页停留时间（秒）",
+            defaultValue: 1,
+            attrs: { type: "number", min: 1, step: 1, max: 10 }
           },
           currentCourseId: {
             defaultValue: ""
@@ -16585,9 +17205,9 @@ ${content}</tr>
         },
         methods() {
           return {
-            main: async () => {
+            main: async (type) => {
               var _a;
-              const id = new URL(window.location.href).searchParams.get("id");
+              const id = new URL(window.location.href).searchParams.get(type === "classroomNow" ? "activityId" : "id");
               if (!id) {
                 return;
               }
@@ -16614,59 +17234,61 @@ ${content}</tr>
                 (_b = lib.$el(".v-modal")) == null ? void 0 : _b.remove();
               }, 3e3);
               await waitForLoad();
-              const courseId = getUniqueCourseId();
-              if (!courseId) {
-                lib.$message.error({ content: "\u83B7\u53D6\u8BFE\u7A0B\u6570\u636E\u5931\u8D25\uFF0C\u8BF7\u624B\u52A8\u5237\u65B0\u9875\u9762" });
-                return;
-              }
-              const not_same_class = !ZJYProject.scripts.study.cfg.currentCourseId || ZJYProject.scripts.study.cfg.currentCourseId !== courseId;
-              if (not_same_class || !ZJYProject.scripts.study.cfg.courseList || ZJYProject.scripts.study.cfg.courseList.length === 0) {
-                const courseData = await getCourseData();
-                if (!courseData) {
+              if (type === "normal") {
+                const courseId = getUniqueCourseId();
+                if (!courseId) {
+                  lib.$message.error({ content: "获取课程数据失败，请手动刷新页面" });
                   return;
                 }
-                ZJYProject.scripts.study.cfg.currentCourseId = courseId;
-                ZJYProject.scripts.study.cfg.courseList = courseData;
+                const not_same_class = !ZJYProject.scripts.study.cfg.currentCourseId || ZJYProject.scripts.study.cfg.currentCourseId !== courseId;
+                if (not_same_class || !ZJYProject.scripts.study.cfg.courseList || ZJYProject.scripts.study.cfg.courseList.length === 0) {
+                  const courseData = await getCourseData();
+                  if (!courseData) {
+                    return;
+                  }
+                  ZJYProject.scripts.study.cfg.currentCourseId = courseId;
+                  ZJYProject.scripts.study.cfg.courseList = courseData;
+                }
               }
               const courseInfo = ZJYProject.scripts.study.cfg.courseList.find((i) => i.id === id);
               if (!courseInfo) {
-                const err = "\u83B7\u53D6\u8BFE\u7A0B\u4FE1\u606F\u5931\u8D25\uFF0C\u8BF7\u624B\u52A8\u5237\u65B0\u9875\u9762";
+                const err = "获取课程信息失败，请手动刷新页面";
                 lib.$message.error({ content: err, duration: 0 });
                 $console.error(err);
                 return;
               }
               const started_url = window.location.href;
-              let msg = "\u5F00\u59CB\u5B66\u4E60\uFF1A" + courseInfo.fileType + "-" + courseInfo.name;
+              let msg = "开始学习：" + courseInfo.fileType + "-" + courseInfo.name;
               lib.$message.success(msg);
               $console.info(msg);
-              if (["ppt", "doc", "pptx", "docx", "pdf", "txt", "ppt\u6587\u6863"].some((i) => courseInfo.fileType === i)) {
-                await watchFile();
-              } else if (["video", "audio", "mp4", "mp3", "flv", "\u89C6\u9891"].some((i) => courseInfo.fileType === i)) {
+              if (["ppt", "doc", "pptx", "docx", "pdf", "txt", "ppt文档"].some((i) => courseInfo.fileType === i)) {
+                await watchFile(this.cfg.pptReadPeriod);
+              } else if (["video", "audio", "mp4", "mp3", "flv", "视频"].some((i) => courseInfo.fileType === i)) {
                 const text = ((_a = lib.$el(".guide")) == null ? void 0 : _a.textContent) || "";
-                msg = `\u4EFB\u52A1\u70B9 ${courseInfo.name}\uFF0C\u4E0D\u652F\u6301\u64AD\u653E\u3002`;
-                if (text.includes("\u5F88\u62B1\u6B49\uFF0C\u60A8\u7684\u6D4F\u89C8\u5668\u4E0D\u652F\u6301\u64AD\u653E\u6B64\u7C7B\u6587\u4EF6") || text.includes("\u6B64\u89C6\u9891\u6682\u65E0\u6CD5\u64AD\u653E")) {
-                  msg = `\u4EFB\u52A1\u70B9 ${courseInfo.name}\uFF0C\u4E0D\u652F\u6301\u64AD\u653E\u3002`;
+                msg = `任务点 ${courseInfo.name}，不支持播放。`;
+                if (text.includes("很抱歉，您的浏览器不支持播放此类文件") || text.includes("此视频暂无法播放")) {
+                  msg = `任务点 ${courseInfo.name}，不支持播放。`;
                   lib.$message.error(msg);
                   $console.error(msg);
                 } else {
                   await watchMedia$1();
                 }
-              } else if (["png", "jpg", "\u56FE\u7247"].some((i) => courseInfo.fileType === i)) {
-                msg = `\u5DF2\u67E5\u770B\u56FE\u7247\u4EFB\u52A1\u70B9 ${courseInfo.name}\uFF0C\u5373\u5C06\u8DF3\u8FC7\u3002`;
+              } else if (["png", "jpg", "图片"].some((i) => courseInfo.fileType === i)) {
+                msg = `已查看图片任务点 ${courseInfo.name}，即将跳过。`;
                 lib.$message.info(msg);
                 $console.info(msg);
               } else {
-                msg = `\u672A\u77E5\u7684\u4EFB\u52A1\u70B9 ${courseInfo.name}\uFF0C\u7C7B\u578B ${courseInfo.fileType}\uFF0C\u8BF7\u8DDF\u4F5C\u8005\u8FDB\u884C\u53CD\u9988\u3002`;
+                msg = `未知的任务点 ${courseInfo.name}，类型 ${courseInfo.fileType}，请跟作者进行反馈。`;
                 lib.$message.error(msg);
                 $console.error(msg);
               }
               if (started_url === window.location.href) {
-                msg = courseInfo.name + " \u4EFB\u52A1\u70B9\u7ED3\u675F\uFF0C\u4E09\u79D2\u540E\u4E0B\u4E00\u7AE0";
-                lib.$message.warn("\u5982\u679C\u804C\u6559\u4E91\u4E00\u76F4\u5361\u5728\u663E\u793A\uFF1A\u201C\u8D44\u6E90\u7C7B\u578B\u65E0\u6CD5\u5B66\u4E60\uFF0C\u8BF7\u6838\u5BF9\u6570\u636E\uFF01\u201D \u8BF7\u624B\u52A8\u5207\u6362\u4E0B\u4E00\u7AE0\u3002");
+                msg = courseInfo.name + " 任务点结束，三秒后下一章";
+                lib.$message.warn("如果职教云一直卡在显示：“资源类型无法学习，请核对数据！” 请手动切换下一章。");
                 lib.$message.info(msg);
                 $console.info(msg);
                 await $.sleep(3e3);
-                await next();
+                await next(type);
               }
             }
           };
@@ -16674,14 +17296,14 @@ ${content}</tr>
       }),
       work: new lib.Script({
         matches: work_pages,
-        name: "\u270D\uFE0F \u4F5C\u4E1A\u8003\u8BD5\u811A\u672C",
+        name: "✍️ 作业考试脚本",
         namespace: "zjy.work.main",
         configs: {
           notes: {
             defaultValue: lib.$ui.notes([
-              "\u81EA\u52A8\u7B54\u9898\u524D\u8BF7\u5728 \u201C\u901A\u7528-\u5168\u5C40\u8BBE\u7F6E\u201D \u4E2D\u8BBE\u7F6E\u9898\u5E93\u914D\u7F6E\u3002",
-              "\u53EF\u4EE5\u642D\u914D \u201C\u901A\u7528-\u5728\u7EBF\u641C\u9898\u201D \u4E00\u8D77\u4F7F\u7528\u3002",
-              "\u8BF7\u624B\u52A8\u8FDB\u5165\u4F5C\u4E1A\u8003\u8BD5\u9875\u9762\u624D\u80FD\u4F7F\u7528\u81EA\u52A8\u7B54\u9898\u3002"
+              "自动答题前请在 “通用-全局设置” 中设置题库配置。",
+              "可以搭配 “通用-在线搜题” 一起使用。",
+              "请手动进入作业考试页面才能使用自动答题。"
             ]).outerHTML
           }
         },
@@ -16726,21 +17348,21 @@ ${content}</tr>
       });
     });
   }
-  async function watchFile() {
+  async function watchFile(pptReadPeriod) {
     var _a, _b;
     const vue = getVueBindElement();
     if (!vue) {
       return;
     }
     while (true) {
-      const [current, total] = ((_b = (_a = document.querySelector(".preview .page")) == null ? void 0 : _a.textContent) == null ? void 0 : _b.trim().replace("\u4E0A\u4E00\u9875", "").replace("\u4E0B\u4E00\u9875", "").split("/").map((i) => parseInt(i.trim()))) || [];
+      const [current, total] = ((_b = (_a = document.querySelector(".preview .page")) == null ? void 0 : _a.textContent) == null ? void 0 : _b.trim().replace("上一页", "").replace("下一页", "").split("/").map((i) => parseInt(i.trim()))) || [];
       if (!current || !total) {
         break;
       }
       if (current >= total) {
         break;
       }
-      await $.sleep(500);
+      await $.sleep(pptReadPeriod * 1e3);
       try {
         vue.next && vue.next();
       } catch {
@@ -16759,17 +17381,18 @@ ${content}</tr>
     return location.href.includes("zyk.icve.com.cn");
   }
   function getVueBindElement() {
-    var _a, _b;
-    return ((_a = lib.$el(".guide")) == null ? void 0 : _a.__vue__) || ((_b = lib.$el(".teach")) == null ? void 0 : _b.__vue__);
+    var _a, _b, _c;
+    return ((_a = lib.$el(".FilePreview")) == null ? void 0 : _a.__vue__) || ((_b = lib.$el(".guide")) == null ? void 0 : _b.__vue__) || ((_c = lib.$el(".teach")) == null ? void 0 : _c.__vue__);
   }
-  async function next() {
+  async function next(type) {
     var _a;
-    const id = new URL(window.location.href).searchParams.get("id");
+    const field = type === "classroomNow" ? "activityId" : "id";
+    const id = new URL(window.location.href).searchParams.get(field);
     let nextObject;
     const data = ZJYProject.scripts.study.cfg.courseList;
     for (let index = 0; index < data.length; index++) {
       const item = data[index];
-      if (["\u6D4B\u9A8C", "\u8BA8\u8BBA"].some((i) => item.fileType === i)) {
+      if (["测验", "讨论"].some((i) => item.fileType === i)) {
         continue;
       }
       if (item.id === id) {
@@ -16785,20 +17408,42 @@ ${content}</tr>
       }
       await $.sleep(3e3);
       const url = new URL(window.location.href);
-      url.searchParams.set("id", nextObject.id);
+      url.searchParams.set("courseDesignId", nextObject.courseDesignId);
+      url.searchParams.set(field, nextObject.id);
       window.location.replace(url.href);
     } else {
       lib.$message.success({
         duration: 0,
-        content: "\u5168\u90E8\u4EFB\u52A1\u5DF2\u5B8C\u6210\u3002"
+        content: "全部任务已完成。"
       });
-      $console.info("\u5168\u90E8\u4EFB\u52A1\u5DF2\u5B8C\u6210\u3002");
-      CommonProject.scripts.settings.methods.notificationBySetting("\u5168\u90E8\u4EFB\u52A1\u70B9\u5DF2\u5B8C\u6210\uFF01", {
+      $console.info("全部任务已完成。");
+      CommonProject.scripts.settings.methods.notificationBySetting("全部任务点已完成！", {
         duration: 0,
-        extraTitle: "\u804C\u6559\u4E91\u5B66\u4E60\u811A\u672C"
+        extraTitle: "职教云学习脚本"
       });
       state$1.studying = false;
     }
+  }
+  function getCourseDataInClassroomNowPage() {
+    var _a, _b, _c;
+    const list = ((_b = (_a = document.querySelector(".classroom_activities")) == null ? void 0 : _a.__vue__) == null ? void 0 : _b.activeList) || [];
+    const data = [];
+    const temp = JSON.parse(JSON.stringify(list));
+    while (temp.length > 0) {
+      const item = temp.shift();
+      if (((_c = item == null ? void 0 : item.children) == null ? void 0 : _c.length) > 0) {
+        temp.unshift(...item.children);
+      } else {
+        data.push({
+          name: item.title,
+          id: item.activityId,
+          fileType: item.fileType,
+          courseDesignId: item.courseDesignId,
+          levelName: item.levelName || ""
+        });
+      }
+    }
+    return data;
   }
   async function getCourseData() {
     var _a;
@@ -16816,7 +17461,8 @@ ${content}</tr>
             name: item.name,
             id: item.id,
             fileType: item.fileType,
-            levelName: item.levelName || ""
+            levelName: item.levelName || "",
+            courseDesignId: item.courseDesignId || ""
           });
         }
       }
@@ -16827,9 +17473,9 @@ ${content}</tr>
       const modal_content = lib.h("div", [
         lib.h("div", { className: "notes card" }, [
           lib.$ui.notes([
-            "\u804C\u6559\u4E91\u7531\u4E8E\u5927\u7AE0\u8282\u4E4B\u95F4\u65E0\u81EA\u52A8\u4E0B\u4E00\u8282\u6309\u94AE\uFF0C\u9700\u8981\u5728\u8BFE\u7A0B\u5F00\u59CB\u524D",
-            "\u7531\u7A0B\u5E8F\u8BFB\u53D6\u5168\u90E8\u7AE0\u8282\u6570\u636E\uFF0C\u8FD9\u6837\u624D\u80FD\u81EA\u52A8\u8FD0\u884C",
-            "\u6570\u636E\u53EA\u9700\u8BFB\u53D6\u4E00\u904D\u5373\u53EF\uFF0C\u540E\u7EED\u65E0\u9700\u91CD\u65B0\u8BFB\u53D6"
+            "职教云由于大章节之间无自动下一节按钮，需要在课程开始前",
+            "由程序读取全部章节数据，这样才能自动运行",
+            "数据只需读取一遍即可，后续无需重新读取"
           ])
         ]),
         progress
@@ -16838,22 +17484,22 @@ ${content}</tr>
       const modal2 = lib.$modal.confirm({
         content: modal_content,
         maskCloseable: false,
-        title: "\u6B63\u5728\u83B7\u53D6\u8BFE\u7A0B\u6570\u636E\u4E2D\uFF0C\u8BF7\u52FF\u64CD\u4F5C...",
+        title: "正在获取课程数据中，请勿操作...",
         confirmButton: null,
-        cancelButtonText: "\u5F3A\u5236\u6682\u505C",
+        cancelButtonText: "强制暂停",
         onCancel() {
           force_pause = true;
         }
       });
       const kejianListEl = document.querySelector(".kejianList");
       if (!kejianListEl) {
-        lib.$message.error({ content: "\u83B7\u53D6\u8BFE\u7A0B\u6570\u636E\u5931\u8D25\uFF0C\u8BF7\u624B\u52A8\u5237\u65B0\u9875\u9762" });
+        lib.$message.error({ content: "获取课程数据失败，请手动刷新页面" });
         return void 0;
       }
       if (kejianListEl.style.display === "none") {
         (_a = Array.from(document.querySelectorAll(".courseBtn div.customBtn")).find((el) => {
           var _a2;
-          return (_a2 = el.textContent) == null ? void 0 : _a2.includes("\u8BFE\u4EF6\u76EE\u5F55");
+          return (_a2 = el.textContent) == null ? void 0 : _a2.includes("课件目录");
         })) == null ? void 0 : _a.click();
         await $.sleep(1e3);
       }
@@ -16871,19 +17517,19 @@ ${content}</tr>
             return `${item.levelName || ""}${item.name}`.replace(/\s/g, "") === (((_a2 = unsaved.textContent) == null ? void 0 : _a2.trim().replace(/\s/g, "")) || "");
           }
         );
-        if (!course_info || ["\u7236\u8282\u70B9", "\u5B50\u8282\u70B9"].includes(course_info.fileType) === false) {
+        if (!course_info || ["父节点", "子节点"].includes(course_info.fileType) === false) {
           folders.push(unsaved);
           continue;
         }
         if (force_pause) {
-          const err = "\u5DF2\u5F3A\u5236\u6682\u505C\uFF0C\u8BF7\u624B\u52A8\u5237\u65B0\u9875\u9762\u540E\u624D\u80FD\u91CD\u65B0\u8FD0\u884C";
+          const err = "已强制暂停，请手动刷新页面后才能重新运行";
           lib.$message.error({ content: err, duration: 0 });
           lib.$modal.alert({ content: err });
           return void 0;
         }
         folders.push(unsaved);
         if (modal2) {
-          progress.innerHTML = "<br><b>\u5F53\u524D\u5DF2\u83B7\u53D6 " + document.querySelectorAll(".fIteml,.iChild").length + " \u4E2A\u5C0F\u8282</b>";
+          progress.innerHTML = "<br><b>当前已获取 " + document.querySelectorAll(".fIteml,.iChild").length + " 个小节</b>";
         }
         unsaved.click();
         await $.sleep(1e3);
@@ -16899,7 +17545,7 @@ ${content}</tr>
     return waitForElement(".subjectList");
   }
   function workOrExam(type, { answererWrappers, period, thread, answerSeparators, answerMatchMode }) {
-    lib.$message.info({ content: "\u5F00\u59CB\u4F5C\u4E1A" });
+    lib.$message.info({ content: "开始作业" });
     CommonProject.scripts.workResults.methods.init({
       questionPositionSyncHandlerType: "zjy"
     });
@@ -16927,7 +17573,7 @@ ${content}</tr>
             });
           });
         } else {
-          throw new Error("\u9898\u76EE\u4E3A\u7A7A\uFF0C\u8BF7\u67E5\u770B\u9898\u76EE\u662F\u5426\u4E3A\u7A7A\uFF0C\u6216\u8005\u5FFD\u7565\u6B64\u9898");
+          throw new Error("题目为空，请查看题目是否为空，或者忽略此题");
         }
       },
       work: {
@@ -16967,10 +17613,10 @@ ${content}</tr>
       }
     });
     worker.doWork({ enable_debug: true }).then(() => {
-      lib.$message.info({ content: "\u4F5C\u4E1A/\u8003\u8BD5\u5B8C\u6210\uFF0C\u8BF7\u81EA\u884C\u68C0\u67E5\u540E\u4FDD\u5B58\u6216\u63D0\u4EA4\u3002", duration: 0 });
+      lib.$message.info({ content: "作业/考试完成，请自行检查后保存或提交。", duration: 0 });
       worker.emit("done");
     }).catch((err) => {
-      lib.$message.error({ content: `\u4F5C\u4E1A/\u8003\u8BD5\u5931\u8D25: ${err}`, duration: 0 });
+      lib.$message.error({ content: `作业/考试失败: ${err}`, duration: 0 });
     });
     return worker;
   }
@@ -16984,13 +17630,13 @@ ${content}</tr>
     currentRunningScriptName: ""
   };
   const ICourseProject = lib.Project.create({
-    name: "\u4E2D\u56FD\u5927\u5B66MOOC",
+    name: "中国大学MOOC",
     domains: ["icourse163.org"],
     scripts: {
       dispatcher: new lib.Script({
-        name: "\u8C03\u5EA6\u5668",
+        name: "调度器",
         hideInPanel: true,
-        matches: [["\u6240\u6709\u9875\u9762", "icourse163.org"]],
+        matches: [["所有页面", "icourse163.org"]],
         oncomplete() {
           setInterval(() => {
             var _a, _b;
@@ -17018,12 +17664,12 @@ ${content}</tr>
         }
       }),
       guide: new lib.Script({
-        name: "\u{1F4A1} \u4F7F\u7528\u63D0\u793A",
+        name: "💡 使用提示",
         matches: [["", "icourse163.org"]],
         namespace: "icourse.guide-v1",
         configs: {
           notes: {
-            defaultValue: lib.$ui.notes(["\u624B\u52A8\u8FDB\u5165\u4EFB\u610F\u8BFE\u7A0B\u91CC\u7684\u8BFE\u4EF6/\u4F5C\u4E1A\uFF0C\u5373\u53EF\u5F00\u59CB\u81EA\u52A8\u5B66\u4E60"]).outerHTML
+            defaultValue: lib.$ui.notes(["手动进入任意课程里的课件/作业，即可开始自动学习"]).outerHTML
           },
           runAtHash: {
             defaultValue: ["/home/course"]
@@ -17039,18 +17685,18 @@ ${content}</tr>
         }
       }),
       study: new lib.Script({
-        name: "\u{1F5A5}\uFE0F \u5B66\u4E60\u811A\u672C",
+        name: "🖥️ 学习脚本",
         namespace: "icourse.study-v1",
         matches: [
-          ["MOOC\u4F5C\u4E1A\u9875\u9762", "icourse163.org/learn"],
-          ["SPOC\u4F5C\u4E1A\u9875\u9762", "icourse163.org/spoc/learn"]
+          ["MOOC作业页面", "icourse163.org/learn"],
+          ["SPOC作业页面", "icourse163.org/spoc/learn"]
         ],
         configs: {
           notes: {
             defaultValue: lib.$ui.notes([
-              "\u8BF7\u52FF\u5728\u4F7F\u7528\u8FC7\u7A0B\u4E2D\u6700\u5C0F\u5316\u6D4F\u89C8\u5668",
-              "\u81EA\u52A8\u8BA8\u8BBA\u9ED8\u8BA4\u5173\u95ED\uFF0C\u5982\u9700\u5F00\u542F\u8BF7\u5728\u4E0B\u65B9\u8BBE\u7F6E\u4E2D\u8BBE\u7F6E",
-              "\u4F5C\u4E1A\u8BF7\u5B8C\u6210\u8BFE\u7A0B\u540E\u624B\u52A8\u8FDB\u5165"
+              "请勿在使用过程中最小化浏览器",
+              "自动讨论默认关闭，如需开启请在下方设置中设置",
+              "作业请完成课程后手动进入"
             ]).outerHTML
           },
           runAtHash: {
@@ -17059,26 +17705,26 @@ ${content}</tr>
           playbackRate,
           volume,
           readSpeed: {
-            label: "PPT\u7FFB\u9605\u901F\u5EA6\uFF08\u79D2\uFF09",
+            label: "PPT翻阅速度（秒）",
             attrs: { type: "number", step: "1", min: "1", max: "10" },
             defaultValue: 1
           },
           discussionStrategy: {
-            label: "\u8BA8\u8BBA\u81EA\u52A8\u56DE\u590D\u65B9\u5F0F",
+            label: "讨论自动回复方式",
             tag: "select",
             defaultValue: "not-reply",
             options: [
-              ["not-reply", "\u4E0D\u8BA8\u8BBA\u56DE\u590D"],
-              ["max-show-up", "\u83B7\u53D6\u51FA\u73B0\u6700\u591A\u7684\u8BC4\u8BBA\u8FDB\u884C\u56DE\u590D"],
-              ["max-fav", "\u83B7\u53D6\u6700\u591A\u70B9\u8D5E\u7684\u8BC4\u8BBA\u8FDB\u884C\u56DE\u590D"],
-              ["use-newest", "\u83B7\u53D6\u6700\u65B0\u7684\u8BC4\u8BBA\u8FDB\u884C\u56DE\u590D"]
+              ["not-reply", "不讨论回复"],
+              ["max-show-up", "获取出现最多的评论进行回复"],
+              ["max-fav", "获取最多点赞的评论进行回复"],
+              ["use-newest", "获取最新的评论进行回复"]
             ]
           },
           enableChapterTest: {
-            label: "\u968F\u5802\u6D4B\u9A8C\u81EA\u52A8\u7B54\u9898",
+            label: "随堂测验自动答题",
             attrs: {
               type: "checkbox",
-              title: "\u662F\u5426\u5F00\u542F\u968F\u5802\u6D4B\u9A8C\u81EA\u52A8\u7B54\u9898\uFF0C\u9ED8\u8BA4\u5173\u95ED\uFF0C\u6D4B\u8BD5\u65F6\u53EA\u9700\u70B9\u51FB\u5373\u53EF\u5B8C\u6210\u6D4B\u9A8C\uFF0C\u4F46\u8FD9\u91CC\u4FDD\u7559\u9009\u9879\u9632\u6B62\u9700\u8981\u5F00\u542F\u3002"
+              title: "是否开启随堂测验自动答题，默认关闭，测试时只需点击即可完成测验，但这里保留选项防止需要开启。"
             },
             defaultValue: false
           }
@@ -17098,26 +17744,50 @@ ${content}</tr>
                 return $playwright.showError();
               }
               $render.moveToEdge();
+              const handleVideoTest = async () => {
+                if (!canRun())
+                  return;
+                setTimeout(async () => {
+                  const question = document.querySelector(".u-questionItem");
+                  const media = document.querySelector("video,audio");
+                  if (question && media) {
+                    $msg_and_log("info", "检测到视频弹窗测验，开始答题");
+                    await new Promise((resolve) => {
+                      ICourseProject.scripts.work.methods.start("chapter-test", canRun, (worker) => {
+                        console.log("worker", worker);
+                        worker.once("done", resolve);
+                        worker.once("close", resolve);
+                        worker.once("stop", resolve);
+                      });
+                    });
+                    await $.sleep(1e3);
+                    await remotePage.click(".j-unitctBox .u-btn-default.j-continue");
+                    $msg_and_log("info", "测验完成");
+                  }
+                  handleVideoTest();
+                }, 3e3);
+              };
+              handleVideoTest();
               const study2 = async () => {
                 var _a, _b;
                 const lessonName = (_a = document.querySelector(".j-lesson .j-up")) == null ? void 0 : _a.textContent;
                 const currentUnitItem = document.querySelector(".j-unitslist  li.current");
                 const unitName = (_b = currentUnitItem == null ? void 0 : currentUnitItem.querySelector(".unit-name")) == null ? void 0 : _b.textContent;
-                $msg_and_log("info", `\u6B63\u5728\u5B66\u4E60\uFF1A${lessonName || ""} - ${unitName || ""}`);
+                $msg_and_log("info", `正在学习：${lessonName || ""} - ${unitName || ""}`);
                 const isJob = (iconName) => currentUnitItem == null ? void 0 : currentUnitItem.querySelector(`[class*=${iconName}]`);
                 let hasJob = true;
                 if (isJob("u-icon-video")) {
                   await waitForElement("video, audio");
                   await watchMedia(this.cfg.playbackRate, this.cfg.volume);
-                  $msg_and_log("info", "\u89C6\u9891\u5B66\u4E60\u5B8C\u6210");
+                  $msg_and_log("info", "视频学习完成");
                 } else if (isJob("u-icon-doc")) {
                   await waitForElement(".ux-pdf-reader");
                   await readPPT(remotePage, this.cfg.readSpeed);
-                  $msg_and_log("info", "PPT\u5B8C\u6210");
+                  $msg_and_log("info", "PPT完成");
                 } else if (isJob("u-icon-discuss")) {
                   await waitForElement(".j-reply-all");
                   await discussion(remotePage, this.cfg.discussionStrategy);
-                  $msg_and_log("info", "\u8BA8\u8BBA\u5B8C\u6210");
+                  $msg_and_log("info", "讨论完成");
                 } else if (isJob("u-icon-test")) {
                   const replay = await waitForElement(".j-replay");
                   if ((replay == null ? void 0 : replay.style.display) === "none") {
@@ -17127,29 +17797,40 @@ ${content}</tr>
                           console.log("worker", worker);
                           worker.once("done", resolve);
                           worker.once("close", resolve);
+                          worker.once("stop", resolve);
                         });
                       });
-                      $msg_and_log("info", "\u6D4B\u9A8C\u5B8C\u6210");
+                      $msg_and_log("info", "测验完成");
                     } else {
                       $msg_and_log(
                         "warn",
-                        "\u968F\u5802\u6D4B\u9A8C\u81EA\u52A8\u7B54\u9898\u529F\u80FD\u5DF2\u5173\u95ED\uFF08\u4E0A\u65B9\u83DC\u5355\u680F-\u4E2D\u56FD\u5927\u5B66MOOC-\u5B66\u4E60\u811A\u672C\u4E2D\u5F00\u542F\uFF09\uFF0C\u5373\u5C06\u8DF3\u8FC7\u3002"
+                        "随堂测验自动答题功能已关闭（上方菜单栏-中国大学MOOC-学习脚本中开启），即将跳过。"
                       );
                     }
                   } else {
-                    $msg_and_log("info", "\u968F\u5802\u6D4B\u9A8C\u5DF2\u5B8C\u6210\uFF0C\u5373\u5C06\u8DF3\u8FC7\u3002");
+                    $msg_and_log("info", "随堂测验已完成，即将跳过。");
                   }
                 } else if (isJob("u-icon-text")) {
-                  $msg_and_log("info", "\u6587\u6863\u65E0\u9700\u5904\u7406\uFF0C\u5373\u5C06\u8DF3\u8FC7\u3002");
+                  const key = "text-job-reload";
+                  if (await lib.$store.getTab(key) === "1") {
+                    lib.$store.setTab(key, "0");
+                    $msg_and_log("info", "文档已完成，即将跳过。");
+                  } else {
+                    lib.$store.setTab(key, "1");
+                    $msg_and_log("info", "文档无需处理，将在刷新完成后跳过。");
+                    await $.sleep(3e3);
+                    window.location.reload();
+                    return;
+                  }
                 } else {
                   hasJob = false;
                 }
                 await $.sleep(3e3);
                 if (canRun()) {
                   if (hasJob) {
-                    $msg_and_log("info", "\u51C6\u5907\u8DF3\u8F6C\u4E0B\u4E00\u7AE0");
+                    $msg_and_log("info", "准备跳转下一章");
                   } else {
-                    $msg_and_log("warn", "\u672A\u627E\u5230\u5B66\u4E60\u5185\u5BB9\uFF0C\u6216\u8005\u6B64\u7AE0\u8282\u4E0D\u652F\u6301\u81EA\u52A8\u5B66\u4E60\uFF01\u5373\u5C06\u8DF3\u8FC7\u672C\u7AE0\u8282");
+                    $msg_and_log("warn", "未找到学习内容，或者此章节不支持自动学习！即将跳过本章节");
                   }
                   await gotoNextJob();
                 }
@@ -17164,11 +17845,11 @@ ${content}</tr>
                   }
                 }
                 if (list.length === 0) {
-                  lib.$message.success({ content: "\u6240\u6709\u7AE0\u8282\u5B66\u4E60\u5B8C\u6210\uFF01", duration: 0 });
-                  $console.info("\u6240\u6709\u7AE0\u8282\u5B66\u4E60\u5B8C\u6210\uFF01");
-                  CommonProject.scripts.settings.methods.notificationBySetting("\u6240\u6709\u7AE0\u8282\u5B66\u4E60\u5B8C\u6210\uFF01", {
+                  lib.$message.success({ content: "所有章节学习完成！", duration: 0 });
+                  $console.info("所有章节学习完成！");
+                  CommonProject.scripts.settings.methods.notificationBySetting("所有章节学习完成！", {
                     duration: 0,
-                    extraTitle: "\u4E2D\u56FD\u5927\u5B66MOOC\u5B66\u4E60\u811A\u672C"
+                    extraTitle: "中国大学MOOC学习脚本"
                   });
                 }
               }
@@ -17184,7 +17865,7 @@ ${content}</tr>
                 };
                 const lessonName = getName(document.querySelector(".j-lesson .j-up"));
                 if (!lessonName) {
-                  throw Error("\u65E0\u6CD5\u8BFB\u53D6\u7AE0\u8282\u540D!");
+                  throw Error("无法读取章节名!");
                 }
                 const lessonList = Array.from(document.querySelectorAll(".j-lesson .j-list .list"));
                 let nextLesson = void 0;
@@ -17205,7 +17886,7 @@ ${content}</tr>
                 }
                 const chapterName = getName(document.querySelector(".j-chapter .j-up"));
                 if (!chapterName) {
-                  throw Error("\u65E0\u6CD5\u8BFB\u53D6\u5355\u5143\u540D!");
+                  throw Error("无法读取单元名!");
                 }
                 const chapterList = Array.from(document.querySelectorAll(".j-chapter .j-list .list"));
                 let nextChapter = void 0;
@@ -17234,11 +17915,12 @@ ${content}</tr>
         }
       }),
       work: new lib.Script({
-        name: "\u270D\uFE0F \u4F5C\u4E1A\u8003\u8BD5\u811A\u672C",
+        name: "✍️ 作业考试脚本",
         namespace: "icourse.work-v2",
         matches: [
-          ["MOOC\u4F5C\u4E1A\u9875\u9762", "icourse163.org/learn"],
-          ["SPOC\u4F5C\u4E1A\u9875\u9762", "icourse163.org/spoc/learn"]
+          ["MOOC作业页面", "icourse163.org/learn"],
+          ["SPOC作业页面", "icourse163.org/spoc/learn"],
+          ["考试页面", "icourse163.org/mooc/main/newExam"]
         ],
         configs: {
           notes: workNotes,
@@ -17248,14 +17930,14 @@ ${content}</tr>
         },
         methods() {
           const start2 = async (type, canRun, onWorkerCreated) => {
-            CommonProject.scripts.render.methods.pin(this);
-            $render.moveToEdge();
             const remotePage = await BackgroundProject.scripts.dev.methods.getRemotePlaywrightCurrentPage();
             if (!remotePage) {
               return $playwright.showError();
             }
             await waitForQuestion();
-            $msg_and_log("info", "\u5F00\u59CB\u7B54\u9898");
+            CommonProject.scripts.render.methods.pin(this);
+            CommonProject.scripts.render.methods.normal();
+            $msg_and_log("info", "开始答题");
             CommonProject.scripts.render.methods.pin(this);
             commonWork(this, {
               workerProvider: (opts) => {
@@ -17265,26 +17947,47 @@ ${content}</tr>
                 });
                 const interval = setInterval(() => {
                   if (canRun() === false) {
-                    $msg_and_log("warn", "\u68C0\u6D4B\u5230\u9875\u9762\u5207\u6362\uFF0C\u65E0\u6CD5\u7EE7\u7EED\u7B54\u9898\uFF0C\u5C06\u5173\u95ED\u81EA\u52A8\u7B54\u9898\u3002");
+                    $msg_and_log("warn", "检测到页面切换，无法继续答题，将关闭自动答题。");
                     clearInterval(interval);
                     worker.emit("close");
                   }
                 }, 1e3);
                 return worker;
               },
-              onWorkerCreated
+              onWorkerCreated,
+              enable_control_panel: true,
+              start_delay_seconds: 3
             });
           };
           return {
             main: async (canRun) => {
               if (location.hash.includes("learn/quizscore")) {
-                lib.$message.success("\u5F53\u524D\u4F5C\u4E1A\u5DF2\u5B8C\u6210\uFF0C\u81EA\u52A8\u7B54\u9898\u5173\u95ED\u3002");
+                lib.$message.success("当前作业已完成，自动答题关闭。");
                 return;
               }
-              return start2("work-or-exam", canRun);
+              return start2("work", canRun);
             },
             start: start2
           };
+        },
+        oncomplete() {
+          this.methods.start("exam", () => true);
+        }
+      }),
+      passportRedirect: new lib.Script({
+        name: "登录重定向修复",
+        matches: [["登录重定向", "passport/logingate/changeCookie.htm"]],
+        configs: {
+          notes: {
+            defaultValue: lib.$ui.notes(["检测到页面重定向到空白页面", "程序将会自动修复"]).outerHTML
+          }
+        },
+        oncomplete(...args) {
+          CommonProject.scripts.render.methods.pin(this);
+          lib.$message.info("检测到中国大学MOOC空白页面，即将重定向修复...");
+          setTimeout(() => {
+            location.href = "https://www.icourse163.org/";
+          }, 3e3);
         }
       })
     }
@@ -17292,7 +17995,7 @@ ${content}</tr>
   function waitForQuestion() {
     return new Promise((resolve, reject) => {
       const interval = setInterval(() => {
-        if (document.querySelector(".u-questionItem")) {
+        if (document.querySelector(".u-questionItem,[class*=questionBody]")) {
           clearInterval(interval);
           resolve();
         }
@@ -17318,11 +18021,12 @@ ${content}</tr>
         redundanceWordsText.split("\n")
       );
     };
+    const work_type = type;
     const worker = new OCSWorker({
-      root: ".u-questionItem",
+      root: type === "exam" ? "[class*=questionBody]" : ".u-questionItem",
       elements: {
-        title: ".j-title .j-richTxt",
-        options: ".choices li,.inputArea"
+        title: type === "exam" ? "[class*=questionInfo]" : ".j-title .j-richTxt",
+        options: type === "exam" ? "[class*=index-module__optionBody]" : ".choices li,.inputArea"
       },
       thread: thread != null ? thread : 1,
       answerSeparators: answerSeparators.split(",").map((s) => s.trim()),
@@ -17339,22 +18043,30 @@ ${content}</tr>
             });
           });
         } else {
-          throw new Error("\u9898\u76EE\u4E3A\u7A7A\uFF0C\u8BF7\u67E5\u770B\u9898\u76EE\u662F\u5426\u4E3A\u7A7A\uFF0C\u6216\u8005\u5FFD\u7565\u6B64\u9898");
+          throw new Error("题目为空，请查看题目是否为空，或者忽略此题");
         }
       },
       work: {
         async handler(type2, answer, option) {
           if (type2 === "judgement" || type2 === "single" || type2 === "multiple") {
+            if (work_type === "exam") {
+              const input2 = option.querySelector("input");
+              if (input2 && !(input2 == null ? void 0 : input2.checked)) {
+                await $.sleep(200);
+                return input2.click();
+              }
+            }
             const text = option.querySelector(".f-richEditorText");
             const input = option.querySelector("input");
             if (input && !(input == null ? void 0 : input.checked) && text) {
+              await $.sleep(200);
               await remotePage.click(text);
             }
           } else if (type2 === "completion" && answer.trim()) {
             const text = option.querySelector("textarea");
             if (text) {
               text.value = answer.trim();
-              await remotePage.click(text);
+              await remotePage.fill("textarea", answer.trim());
             }
           }
         }
@@ -17364,10 +18076,10 @@ ${content}</tr>
           const correct = el.querySelector(".u-icon-correct");
           const wrong = el.querySelector(".u-icon-wrong");
           if (correct) {
-            correct.replaceWith("\u5BF9");
+            correct.replaceWith("对");
           }
           if (wrong) {
-            wrong.replaceWith("\u9519");
+            wrong.replaceWith("错");
           }
         });
       },
@@ -17380,12 +18092,12 @@ ${content}</tr>
         CommonProject.scripts.workResults.methods.updateWorkStateByResults(res);
       }
     });
-    worker.doWork().then(async (results) => {
+    worker.doWork({ enable_debug: true }).then(async (results) => {
       if (worker.isClose) {
         return;
       }
       if (type === "chapter-test") {
-        $msg_and_log("info", `\u7B54\u9898\u5B8C\u6210\uFF0C\u5C06\u7B49\u5F85 ${stopSecondWhenFinish} \u79D2\u540E\u8FDB\u884C\u4FDD\u5B58\u6216\u63D0\u4EA4\u3002`);
+        $msg_and_log("info", `答题完成，将等待 ${stopSecondWhenFinish} 秒后进行保存或提交。`);
         await $.sleep(stopSecondWhenFinish * 1e3);
         if (worker.isClose) {
           return;
@@ -17394,9 +18106,9 @@ ${content}</tr>
           type: upload,
           results,
           async callback(finishedRate, uploadable) {
-            const content = `\u5B8C\u6210\u7387 ${finishedRate.toFixed(2)}% :  ${uploadable ? "3\u79D2\u540E\u5C06\u81EA\u52A8\u63D0\u4EA4" : "3\u79D2\u540E\u5C06\u81EA\u52A8\u8DF3\u8FC7\uFF08\u6CA1\u4FDD\u5B58\u6309\u94AE\uFF09"} `;
+            const content = `完成率 ${finishedRate.toFixed(2)}% :  ${uploadable ? "3秒后将自动提交" : "3秒后将自动跳过（没保存按钮）"} `;
             $console.info(content);
-            lib.$message.success({ content, duration: 0 });
+            lib.$message.success({ content, duration: type === "chapter-test" ? 10 : 0 });
             await $.sleep(3e3);
             if (worker.isClose) {
               return;
@@ -17406,17 +18118,17 @@ ${content}</tr>
               if (sumbit) {
                 await remotePage.click(sumbit);
               } else {
-                $msg_and_log("warn", "\u6CA1\u6709\u627E\u5230\u63D0\u4EA4\u6309\u94AE\uFF0C\u5C06\u8DF3\u8FC7\u63D0\u4EA4\u3002");
+                $msg_and_log("warn", "没有找到提交按钮，将跳过提交。");
               }
             }
           }
         });
       } else {
-        lib.$message.success({ content: "\u4F5C\u4E1A/\u8003\u8BD5\u5B8C\u6210\uFF0C\u8BF7\u81EA\u884C\u68C0\u67E5\u540E\u4FDD\u5B58\u6216\u63D0\u4EA4\u3002", duration: 0 });
+        lib.$message.success({ content: "作业/考试完成，请自行检查后保存或提交。", duration: 0 });
       }
       worker.emit("done");
     }).catch((err) => {
-      lib.$message.error({ content: "\u7B54\u9898\u7A0B\u5E8F\u53D1\u751F\u9519\u8BEF : " + err.message, duration: 0 });
+      lib.$message.error({ content: "答题程序发生错误 : " + err.message, duration: 0 });
     });
     return worker;
   }
@@ -17453,7 +18165,7 @@ ${content}</tr>
         if (next2) {
           await remotePage.click(next2);
         } else {
-          $msg_and_log("error", "\u672A\u627E\u5230PPT\u7684\u4E0B\u4E00\u9875\u6309\u94AE\uFF01");
+          $msg_and_log("error", "未找到PPT的下一页按钮！");
         }
         await $.sleep(readSpeed * 1e3);
       }
@@ -17462,7 +18174,7 @@ ${content}</tr>
   async function discussion(remotePage, discussionStrategy) {
     var _a, _b, _c, _d, _e;
     if (discussionStrategy === "not-reply") {
-      return $msg_and_log("warn", "\u8BA8\u8BBA\u81EA\u52A8\u56DE\u590D\u529F\u80FD\u5DF2\u5173\u95ED\uFF08\u4E0A\u65B9\u83DC\u5355\u680F-\u4E2D\u56FD\u5927\u5B66MOOC-\u5B66\u4E60\u811A\u672C\u4E2D\u5F00\u542F\uFF09\u3002");
+      return $msg_and_log("warn", "讨论自动回复功能已关闭（上方菜单栏-中国大学MOOC-学习脚本中开启）。");
     }
     let res = "";
     if (discussionStrategy === "max-show-up") {
@@ -17473,7 +18185,7 @@ ${content}</tr>
       }
       const content = (_b = (_a = [...mapping.entries()].sort((a, b) => b[1] - a[1])) == null ? void 0 : _a[0]) == null ? void 0 : _b[0];
       if (!content) {
-        $msg_and_log("error", "\u8BFB\u53D6\u51FA\u73B0\u6700\u591A\u8BC4\u8BBA\u5931\u8D25\uFF01");
+        $msg_and_log("error", "读取出现最多评论失败！");
       }
       res = content;
     } else if (discussionStrategy === "max-fav") {
@@ -17489,13 +18201,13 @@ ${content}</tr>
       }
       const content = ((_d = maxEl == null ? void 0 : maxEl.querySelector(".j-content")) == null ? void 0 : _d.textContent) || "";
       if (!content) {
-        $msg_and_log("error", "\u8BFB\u53D6\u6700\u591A\u70B9\u8D5E\u8BC4\u8BBA\u5931\u8D25\uFF01");
+        $msg_and_log("error", "读取最多点赞评论失败！");
       }
       res = content;
     } else if (discussionStrategy === "use-newest") {
       const content = ((_e = document.querySelector(".j-reply-all .f-pr .first .j-content")) == null ? void 0 : _e.textContent) || "";
       if (!content) {
-        $msg_and_log("error", "\u8BFB\u53D6\u6700\u65B0\u8BC4\u8BBA\u5931\u8D25\uFF01");
+        $msg_and_log("error", "读取最新评论失败！");
       }
       res = content;
     }
@@ -17506,13 +18218,13 @@ ${content}</tr>
       const submit = document.querySelector(".j-reply-add .editbtn");
       if (submit) {
         await remotePage.click(submit);
-        lib.$message.info("\u63D0\u4EA4\u56DE\u590D\u6210\u529F\uFF01");
+        lib.$message.info("提交回复成功！");
       } else {
-        $msg_and_log("error", "\u83B7\u53D6\u63D0\u4EA4\u6309\u94AE\u5931\u8D25\uFF01");
+        $msg_and_log("error", "获取提交按钮失败！");
       }
       await $.sleep(2e3);
     } else {
-      $msg_and_log("error", "\u83B7\u53D6\u8BC4\u8BBA\u8F93\u5165\u6846\u5931\u8D25\uFF01");
+      $msg_and_log("error", "获取评论输入框失败！");
     }
   }
   function definedProjects() {
@@ -17707,7 +18419,7 @@ hr {
 .base-style-button-secondary:disabled:active {
 	box-shadow: none;
 }
-container-element.close {
+container-element.hidden {
 	display: none;
 }
 container-element.minimize {
@@ -17785,6 +18497,11 @@ header-element .extra-menu-bar .script-panel-link.danger {
 }
 header-element .extra-menu-bar .script-panel-link:disabled:active {
 	box-shadow: none;
+}
+header-element .extra-menu-bar .script-panel-link.active {
+	background-color: #1890ff1a;
+	border-color: #1890ff;
+	color: #1890ff;
 }
 header-element .extra-menu-bar .script-panel-link + .script-panel-link {
 	margin-left: 4px;
@@ -17866,6 +18583,10 @@ script-panel-element + script-panel-element {
 	margin: 0px 8px;
 	line-height: 26px;
 	letter-spacing: 1px;
+}
+.secondary {
+	font-size: 12px;
+	color: #8b8b8b;
 }
 .tooltip-container {
 	z-index: 99999999999999;
@@ -18345,12 +19066,12 @@ modal-element.confirm .modal-input {
 .separator:not(:empty)::after {
 	margin-left: 0.25em;
 }
-.minimize .body,
-.minimize header-element .dropdown,
-.minimize .footer {
+container-element.minimize .body,
+container-element.minimize header-element .dropdown,
+container-element.minimize .footer {
 	display: none;
 }
-.minimize header-element {
+container-element.minimize header-element {
 	padding: 8px;
 	border-radius: 8px;
 	box-shadow: 0px 0px 24px -12px black;
@@ -18402,11 +19123,14 @@ search-infos-element .search-result .answer {
 	color: #7c7c7c;
 }
 search-infos-element .search-result .answer code {
-	background-color: #f3f3f3;
-	padding: 2px 4px;
+	border-bottom: 1px solid #dcdcdc;
+	padding: 2px 0px;
 	border-radius: 2px;
 	margin: 4px;
-	line-height: 20px;
+	line-height: 22px;
+}
+search-infos-element .search-result .answer code + code {
+	margin-left: 4px;
 }
 search-infos-element .search-result .search-result-answer-tag {
 	padding: 2px 4px;
@@ -18445,12 +19169,20 @@ search-infos-element .search-result .search-result-answer-tag.yellow {
 search-infos-element .search-result .search-result-answer-tag.purple {
 	background-color: #f9f0ff;
 	border: 1px solid #d3adf7;
-	color: #722ed1;
+	color: #9b59b6;
 }
 search-infos-element .search-result .search-result-answer-tag.orange {
 	background-color: #fff7e6;
 	border: 1px solid #ffd591;
 	color: #fa8c16;
+}
+search-infos-element .search-result-question-type {
+	background-color: #e6f7ff;
+	border: 1px solid #91d5ff;
+	color: #1890ff;
+	margin-right: 8px;
+	padding: 0px 4px;
+	border-radius: 4px;
 }
 search-infos-element .error {
 	color: #ff6b6ded;
@@ -18484,6 +19216,24 @@ search-infos-element .error {
 	text-decoration: underline;
 	color: gray;
 	cursor: pointer;
+}
+.work-result-list {
+	max-height: 400px;
+	overflow: auto;
+	margin: 12px 0px;
+	padding: 6px;
+	border: 1px solid #e1e1e1;
+	border-radius: 4px;
+}
+.search-info-title {
+	border: 1px solid #e1e1e1;
+	border-radius: 4px;
+	padding: 8px 12px;
+	margin-bottom: 12px;
+	line-height: 20px;
+}
+.search-info-details {
+	margin-left: 4px;
 }
 .console {
 	max-height: 300px;
@@ -18581,7 +19331,7 @@ search-infos-element .error {
 	box-shadow: 0px 8px 16px 0px #00000033;
 	z-index: 1;
 	border-radius: 4px;
-	padding: 12px;
+	padding: 8px 12px;
 	min-width: 120px;
 }
 .dropdown-content.show {
@@ -18592,12 +19342,14 @@ search-infos-element .error {
 	z-index: 999;
 }
 .dropdown-content .dropdown-option {
+	padding-left: 4px;
 	white-space: nowrap;
 }
 .dropdown-content .dropdown-option:hover {
 	background-color: #f3f3f3;
 }
 .dropdown-content .dropdown-option.active {
+	background-color: #1890ff1a;
 	color: #1890ff;
 }
 .space {
@@ -18605,6 +19357,61 @@ search-infos-element .error {
 }
 .config-details label {
 	padding-left: 12px;
+}
+.alert-info-wrapper {
+	margin-bottom: 8px;
+}
+.alert-info-wrapper .result-info {
+	padding: 12px;
+	text-align: center;
+	border-radius: 6px;
+}
+.alert-info-wrapper .unresolved {
+	color: #a1a1a1;
+	background-color: #f7f7f7;
+}
+.alert-info-wrapper .no-answer {
+	color: #a1a1a1;
+	background-color: #f7f7f7;
+}
+.alert-info-wrapper .error {
+	color: #ff4d4f;
+	background-color: #fff1f0;
+}
+message-element {
+	animation: show 0.5s;
+}
+script-panel-element > div,
+script-panel-link,
+container-element,
+modal-element {
+	animation: fade-in 0.3s;
+}
+@keyframes show {
+	0% {
+		transform: translateY(20px);
+		opacity: 0;
+	}
+	100% {
+		transform: translateY(0);
+		opacity: 1;
+	}
+}
+@keyframes fade-in {
+	0% {
+		opacity: 0;
+	}
+	100% {
+		opacity: 1;
+	}
+}
+@keyframes fade-out {
+	0% {
+		opacity: 1;
+	}
+	100% {
+		opacity: 0;
+	}
 }
 `;
 
