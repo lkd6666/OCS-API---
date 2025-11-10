@@ -585,6 +585,16 @@ class PromptBuilder:
     """智能Prompt构建器"""
     
     @staticmethod
+    def _is_image_url(text: str) -> bool:
+        """判断文本是否为图片URL"""
+        if not text:
+            return False
+        text = str(text).strip().lower()
+        # 检查是否以http开头且包含图片扩展名
+        return (text.startswith('http://') or text.startswith('https://')) and \
+               any(ext in text for ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'])
+    
+    @staticmethod
     def build_prompt(question: str, options: List[str], q_type: str) -> str:
         """根据题型构建prompt"""
         
@@ -602,9 +612,12 @@ class PromptBuilder:
     @staticmethod
     def _build_single_choice_prompt(question: str, options: List[str]) -> str:
         """构建单选题prompt"""
+        # 检查选项中是否有图片URL
+        has_image_options = any(PromptBuilder._is_image_url(opt) for opt in options)
+        
         options_text = "\n".join([f"{chr(65+i)}. {opt}" for i, opt in enumerate(options)])
         
-        return f"""你是一个专业的在线考试答题助手，请严格按照要求回答。
+        base_prompt = f"""你是一个专业的在线考试答题助手，请严格按照要求回答。
 
 【题目类型】单选题（只能选择一个正确答案）
 
@@ -618,20 +631,39 @@ class PromptBuilder:
 1. 仔细分析题目和所有选项
 2. 只选择一个最正确的答案
 3. 必须从给定的选项中选择，不能自己编造
-4. 回答格式：直接输出选项内容，不要包含A、B、C等标识符
-5. 只输出答案内容，不要有任何解释、分析或额外文字
+4. 回答格式：直接输出选项的完整原始内容，不要包含A、B、C等标识符
+5. 只输出答案的原始内容，不要有任何解释、分析或额外文字"""
+        
+        if has_image_options:
+            base_prompt += """
+6. **如果选项是图片URL（http://或https://开头），必须原样输出完整的URL地址**
+7. **不要尝试描述图片内容，直接输出URL字符串**"""
+        
+        base_prompt += """
 
 【示例】
-如果正确答案是选项"北京"，则只输出：北京
+如果正确答案是选项"北京"，则只输出：北京"""
+        
+        if has_image_options:
+            base_prompt += """
+如果正确答案是图片选项"https://example.com/image.jpg"，则只输出：https://example.com/image.jpg"""
+        
+        base_prompt += """
 
 现在请回答上述题目："""
+        
+        return base_prompt
 
     @staticmethod
     def _build_multiple_choice_prompt(question: str, options: List[str]) -> str:
         """构建多选题prompt"""
+        # 检查选项中是否有图片URL
+        has_image_options = any(PromptBuilder._is_image_url(opt) for opt in options)
+        
         options_text = "\n".join([f"{chr(65+i)}. {opt}" for i, opt in enumerate(options)])
         
-        return f"""你是一个专业的在线考试答题助手，请严格按照要求回答。
+        # 基础说明
+        base_instruction = f"""你是一个专业的在线考试答题助手，请严格按照要求回答。
 
 【题目类型】多选题（可能有多个正确答案）
 
@@ -641,18 +673,50 @@ class PromptBuilder:
 【选项】
 {options_text}
 
-【回答要求】
+【回答要求 - 非常重要】
 1. 仔细分析题目，找出所有正确的选项
 2. 多选题通常有2个或以上的正确答案
-3. 必须从给定的选项中选择，不能自己编造
+3. **必须输出选项的完整原始内容，不要输出A、B、C、D等字母标识**
 4. 多个答案之间用井号#分隔
-5. 回答格式：选项1#选项2#选项3（不要包含A、B、C等标识符）
-6. 只输出答案内容，不要有任何解释、分析或额外文字
+5. 按照选项顺序输出（即A的内容在前，B的内容在后，以此类推）
+6. **只输出选项的原始内容，不要有任何解释、分析、字母标识或额外文字**
+7. 确保完整准确地复制选项原始内容，包括图片URL，不要遗漏或修改任何字符"""
+        
+        # 如果有图片选项，添加特殊说明
+        if has_image_options:
+            image_instruction = """
 
-【示例】
-如果正确答案是"北京"和"上海"两个选项，则输出：北京#上海
+【⚠️ 特别注意 - 图片选项处理】
+8. **选项中包含图片URL（http://或https://开头，以.jpg/.png/.gif等结尾）**
+9. **如果选项是图片URL，必须原样输出完整的URL地址**
+10. **不要尝试描述图片内容，直接输出URL字符串**
+11. 图片已经在上下文中提供，你能看到图片内容，根据图片内容判断是否正确"""
+            base_instruction += image_instruction
+        
+        # 添加示例
+        examples = """
 
-现在请回答上述题目："""
+【输出格式示例】
+示例1 - 文本选项：
+如果A和C选项正确，A选项内容是"北京是中国的首都"，C选项内容是"上海是中国最大的城市"：
+错误输出：A#C
+错误输出：北京#上海
+正确输出：北京是中国的首都#上海是中国最大的城市"""
+        
+        if has_image_options:
+            examples += """
+
+示例2 - 图片选项：
+如果选项A是文本"正确答案"，选项B是图片URL "https://example.com/image.jpg"，选项C是文本"另一个答案"，且A、B、C都正确：
+错误输出：A#B#C
+错误输出：正确答案#图片#另一个答案
+正确输出：正确答案#https://example.com/image.jpg#另一个答案"""
+        
+        examples += """
+
+现在请回答上述题目，记住：只输出选项的完整原始内容（文本或URL），用#分隔，不要有任何其他内容："""
+        
+        return base_instruction + examples
 
     @staticmethod
     def _build_judgement_prompt(question: str, options: List[str]) -> str:
