@@ -24,7 +24,7 @@ load_dotenv()
 # ==================== 配置区域 ====================
 
 # 模型配置
-MODEL_PROVIDER = os.getenv('MODEL_PROVIDER', 'deepseek')  # deepseek, doubao 或 auto（智能选择）
+MODEL_PROVIDER = os.getenv('MODEL_PROVIDER', 'deepseek')  # deepseek, doubao, qianfan 或 auto（智能选择）
 MODEL_NAME = os.getenv('MODEL_NAME', 'deepseek-chat')     # 模型名称
 
 # 智能模型选择配置
@@ -42,6 +42,11 @@ DOUBAO_API_KEY = os.getenv('DOUBAO_API_KEY', '')
 DOUBAO_BASE_URL = os.getenv('DOUBAO_BASE_URL', 'https://ark.cn-beijing.volces.com/api/v3')
 DOUBAO_MODEL = os.getenv('DOUBAO_MODEL', 'doubao-seed-1-6-251015')
 
+# 百度千帆配置
+QIANFAN_ACCESS_KEY = os.getenv('QIANFAN_ACCESS_KEY', '')
+QIANFAN_SECRET_KEY = os.getenv('QIANFAN_SECRET_KEY', '')
+QIANFAN_MODEL = os.getenv('QIANFAN_MODEL', 'ERNIE-Speed-8K')  # 免费模型推荐
+
 # 思考模式配置
 ENABLE_REASONING = os.getenv('ENABLE_REASONING', 'false').lower() == 'true'
 REASONING_EFFORT = os.getenv('REASONING_EFFORT', 'medium')  # low, medium, high
@@ -54,6 +59,7 @@ TEMPERATURE = float(os.getenv('TEMPERATURE', '0.1'))
 # max_tokens 限制:
 # - deepseek-chat: [1, 8192] (最大8K)
 # - deepseek-reasoner: [1, 65536] (最大64K)
+# - qianfan ERNIE系列: [2, 2048] (最大2K)
 # 普通模式的 max_tokens（默认500）
 MAX_TOKENS_RAW = int(os.getenv('MAX_TOKENS', '500'))
 MAX_TOKENS = max(1, min(8192, MAX_TOKENS_RAW))  # 默认限制到8K（deepseek-chat的限制）
@@ -187,8 +193,24 @@ class ModelClient:
             else:
                 logger.warning("⚠️  豆包 API密钥或模型ID未配置，图片题目可能无法使用")
             
+            # 尝试初始化千帆
+            if QIANFAN_ACCESS_KEY and QIANFAN_SECRET_KEY:
+                try:
+                    import qianfan
+                    # 千帆使用不同的SDK，存储为特殊客户端
+                    self.clients['qianfan'] = {
+                        'type': 'qianfan',
+                        'client': qianfan.ChatCompletion(ak=QIANFAN_ACCESS_KEY, sk=QIANFAN_SECRET_KEY)
+                    }
+                    self.models['qianfan'] = QIANFAN_MODEL
+                    logger.info("✅ 千帆客户端已就绪")
+                except Exception as e:
+                    logger.warning(f"⚠️  千帆初始化失败: {str(e)}")
+            else:
+                logger.warning("⚠️  千帆 AK/SK未配置")
+            
             if not self.clients:
-                raise ValueError("智能模式需要至少配置一个模型的API密钥（DeepSeek或豆包）")
+                raise ValueError("智能模式需要至少配置一个模型的API密钥（DeepSeek、豆包或千帆）")
             
             # 设置默认客户端和模型（用于显示）
             if self.prefer_model in self.clients:
@@ -234,6 +256,19 @@ class ModelClient:
                 max_retries=MAX_RETRIES
             )
             self.model = DOUBAO_MODEL
+        
+        elif self.provider == 'qianfan':
+            if not QIANFAN_ACCESS_KEY or not QIANFAN_SECRET_KEY:
+                logger.warning("⚠️  千帆 AK/SK未配置")
+            
+            import qianfan
+            # 千帆使用自己的SDK
+            self.client = {
+                'type': 'qianfan',
+                'client': qianfan.ChatCompletion(ak=QIANFAN_ACCESS_KEY, sk=QIANFAN_SECRET_KEY)
+            }
+            self.model = QIANFAN_MODEL
+            logger.info(f"✅ 千帆客户端已初始化，模型: {self.model}")
             
         else:
             raise ValueError(f"不支持的模型提供商: {provider}")
@@ -284,6 +319,13 @@ class ModelClient:
                 # 普通模式
                 actual_model = selected_model
                 max_tokens_limit = MAX_TOKENS
+        elif selected_provider == 'qianfan':
+            # 千帆模型，限制max_tokens到2048
+            actual_model = selected_model
+            if use_reasoning:
+                max_tokens_limit = min(REASONING_MAX_TOKENS, 2048)
+            else:
+                max_tokens_limit = min(MAX_TOKENS, 2048)
         else:
             # 豆包模型
             actual_model = selected_model
@@ -295,7 +337,7 @@ class ModelClient:
                 max_tokens_limit = MAX_TOKENS
         
         # 构建消息（支持动态切换：首次尝试使用图片，失败后降级为纯文本）
-        use_images = self.provider == 'doubao' and image_urls
+        use_images = selected_provider == 'doubao' and image_urls
         
         # 构建消息的函数
         def build_messages(use_image_urls: bool):
@@ -316,9 +358,9 @@ class ModelClient:
                     {"role": "user", "content": user_content}
                 ]
             else:
-                # 纯文本格式（DeepSeek或无图片）
-                if image_urls and selected_provider == 'deepseek':
-                    logger.warning("⚠️  DeepSeek不支持图片输入，已忽略图片")
+                # 纯文本格式（DeepSeek、千帆或无图片）
+                if image_urls and selected_provider in ['deepseek', 'qianfan']:
+                    logger.warning(f"⚠️  {selected_provider}不支持图片输入，已忽略图片")
                 return [
                     {"role": "system", "content": "你是一个专业、严谨的答题助手。你必须根据题目和选项给出准确的答案，严格按照要求的格式输出，不要有任何多余的内容。"},
                     {"role": "user", "content": prompt}
@@ -354,32 +396,63 @@ class ModelClient:
                     request_params["messages"] = build_messages(False)
                     logger.info("🔄 使用纯文本模式重试（不使用图片）")
                 
-                # 调用API（使用选定的客户端）
-                response = selected_client.chat.completions.create(**request_params)
-                
-                # 提取推理过程和答案
-                reasoning_content = None
-                if hasattr(response.choices[0].message, 'reasoning_content'):
-                    reasoning_content = response.choices[0].message.reasoning_content
-                    if reasoning_content:
-                        logger.info(f"推理过程: {reasoning_content[:100]}...")
-                
-                answer = response.choices[0].message.content.strip()
-                logger.info(f"模型返回答案: {answer}")
-                
-                # 提取token使用量
-                usage_info = None
-                if hasattr(response, 'usage'):
+                # 调用API（区分千帆和OpenAI风格的客户端）
+                if selected_provider == 'qianfan':
+                    # 千帆使用自己的SDK
+                    qianfan_client = selected_client['client']
+                    messages = request_params["messages"]
+                    
+                    # 千帆API调用
+                    qf_response = qianfan_client.do(
+                        model=actual_model,
+                        messages=messages,
+                        temperature=TEMPERATURE,
+                        top_p=TOP_P
+                    )
+                    
+                    # 转换千帆响应格式
+                    answer = qf_response.get('result', '').strip()
+                    logger.info(f"模型返回答案: {answer}")
+                    
+                    # 千帆不支持reasoning_content
+                    reasoning_content = None
+                    
+                    # 提取token使用量
                     usage_info = {
-                        'prompt_tokens': response.usage.prompt_tokens if hasattr(response.usage, 'prompt_tokens') else 0,
-                        'completion_tokens': response.usage.completion_tokens if hasattr(response.usage, 'completion_tokens') else 0,
-                        'total_tokens': response.usage.total_tokens if hasattr(response.usage, 'total_tokens') else 0
+                        'prompt_tokens': qf_response.get('usage', {}).get('prompt_tokens', 0),
+                        'completion_tokens': qf_response.get('usage', {}).get('completion_tokens', 0),
+                        'total_tokens': qf_response.get('usage', {}).get('total_tokens', 0)
                     }
                     logger.debug(f"Token使用量: 输入={usage_info['prompt_tokens']}, 输出={usage_info['completion_tokens']}, 总计={usage_info['total_tokens']}")
+                    
+                    return reasoning_content, answer, usage_info
                 else:
-                    usage_info = {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
-                
-                return reasoning_content, answer, usage_info
+                    # OpenAI风格的客户端（DeepSeek、豆包）
+                    response = selected_client.chat.completions.create(**request_params)
+                    
+                    # 提取推理过程和答案
+                    reasoning_content = None
+                    if hasattr(response.choices[0].message, 'reasoning_content'):
+                        reasoning_content = response.choices[0].message.reasoning_content
+                        if reasoning_content:
+                            logger.info(f"推理过程: {reasoning_content[:100]}...")
+                    
+                    answer = response.choices[0].message.content.strip()
+                    logger.info(f"模型返回答案: {answer}")
+                    
+                    # 提取token使用量
+                    usage_info = None
+                    if hasattr(response, 'usage'):
+                        usage_info = {
+                            'prompt_tokens': response.usage.prompt_tokens if hasattr(response.usage, 'prompt_tokens') else 0,
+                            'completion_tokens': response.usage.completion_tokens if hasattr(response.usage, 'completion_tokens') else 0,
+                            'total_tokens': response.usage.total_tokens if hasattr(response.usage, 'total_tokens') else 0
+                        }
+                        logger.debug(f"Token使用量: 输入={usage_info['prompt_tokens']}, 输出={usage_info['completion_tokens']}, 总计={usage_info['total_tokens']}")
+                    else:
+                        usage_info = {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
+                    
+                    return reasoning_content, answer, usage_info
                 
             except Exception as e:
                 last_error = e
