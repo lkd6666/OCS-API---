@@ -1429,7 +1429,8 @@ def get_config():
             "prefer_model": model_client.prefer_model,
             "image_model": model_client.image_model,
             "deepseek_configured": "deepseek" in model_client.clients,
-            "doubao_configured": "doubao" in model_client.clients
+            "doubao_configured": "doubao" in model_client.clients,
+            "qianfan_configured": "qianfan" in model_client.clients
         })
     else:
         config["auto_mode"] = False
@@ -1570,7 +1571,9 @@ if __name__ == '__main__':
             print("      - DEEPSEEK_API_KEY=your_key (获取: https://platform.deepseek.com/api_keys)")
             print("      - DOUBAO_API_KEY=your_key + DOUBAO_MODEL=your_endpoint_id")
             print("        (获取: https://console.volcengine.com/ark)")
-            print("   4. 建议配置两个模型以获得最佳效果")
+            print("      - QIANFAN_ACCESS_KEY=your_ak + QIANFAN_SECRET_KEY=your_sk")
+            print("        (获取: https://console.bce.baidu.com/qianfan/ais/console/applicationConsole/application)")
+            print("   4. 建议配置多个模型以获得最佳效果")
         elif MODEL_PROVIDER == 'deepseek':
             print("   1. 创建或编辑 .env 文件")
             print("   2. 设置 DEEPSEEK_API_KEY=your_api_key")
@@ -1580,6 +1583,11 @@ if __name__ == '__main__':
             print("   2. 设置 DOUBAO_API_KEY=your_api_key")
             print("   3. 设置 DOUBAO_MODEL=your_endpoint_id")
             print("   4. 获取API密钥: https://console.volcengine.com/ark")
+        elif MODEL_PROVIDER == 'qianfan':
+            print("   1. 创建或编辑 .env 文件")
+            print("   2. 设置 QIANFAN_ACCESS_KEY=your_access_key")
+            print("   3. 设置 QIANFAN_SECRET_KEY=your_secret_key")
+            print("   4. 获取API密钥: https://console.bce.baidu.com/qianfan/ais/console/applicationConsole/application")
         print("="*80 + "\n")
     else:
         if model_client.is_auto_mode:

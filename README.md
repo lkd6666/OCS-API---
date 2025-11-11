@@ -12,9 +12,10 @@
 ![Flask](https://img.shields.io/badge/Flask-3.0-green.svg)
 ![DeepSeek](https://img.shields.io/badge/DeepSeek-AI-orange.svg)
 ![Doubao](https://img.shields.io/badge/Doubao-AI-purple.svg)
+![Qianfan](https://img.shields.io/badge/百度千帆-AI-red.svg)
 ![AI Maintained](https://img.shields.io/badge/Maintained%20by-AI-00D9FF.svg)
 
-一个专为[OCS网课助手](https://docs.ocsjs.com/)设计的智能答题API，支持DeepSeek、豆包等多个大语言模型，提供强大的AI答题能力。
+一个专为[OCS网课助手](https://docs.ocsjs.com/)设计的智能答题API，支持DeepSeek、豆包、百度千帆等多个大语言模型，提供强大的AI答题能力。
 
 > 📌 **关于 OCS**
 > 
@@ -44,11 +45,12 @@
 ## ✨ 特性
 
 ### 🤖 AI驱动
-- **多模型支持**：DeepSeek、豆包(Doubao)等多个大语言模型
+- **多模型支持**：DeepSeek、豆包(Doubao)、百度千帆等多个大语言模型
 - **思考模式**：支持DeepSeek Reasoner和豆包深度思考模式
 - **多选题智能**：多选题自动启用深度思考，提高准确率
 - **图片题智能**：带图片题目自动启用深度思考，提高识别准确率
 - **智能理解**：强大的自然语言理解能力
+- **免费模型**：支持千帆平台多个免费模型（ERNIE-Speed-8K、ERNIE-Lite-8K等）
 
 ### 🎯 题型支持
 - ✅ 单选题（Single Choice）
@@ -126,12 +128,24 @@ cp env.template .env
    - API密钥（填入 `DOUBAO_API_KEY`）
    - 接入点ID（填入 `DOUBAO_MODEL`）
 
+#### 百度千帆（推荐，有免费额度）
+
+1. 访问 [百度智能云千帆控制台](https://console.bce.baidu.com/qianfan/ais/console/applicationConsole/application)
+2. 注册/登录百度账号
+3. 创建应用，获取：
+   - API Key（即Access Key，填入 `QIANFAN_ACCESS_KEY`）
+   - Secret Key（填入 `QIANFAN_SECRET_KEY`）
+4. 选择模型（推荐使用免费模型）：
+   - ERNIE-Speed-8K（免费、速度快）
+   - ERNIE-Lite-8K（免费、轻量级）
+   - ERNIE-4.0-8K（付费、效果最好）
+
 ### 📝 编辑配置文件
 
 编辑 `.env` 文件，填入API密钥：
 
 ```env
-# 选择模型提供商：deepseek、doubao 或 auto（智能选择）
+# 选择模型提供商：deepseek、doubao、qianfan 或 auto（智能选择）
 MODEL_PROVIDER=auto  # 推荐使用auto模式
 
 # DeepSeek配置（纯文本题目，成本低）
@@ -142,6 +156,11 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com
 DOUBAO_API_KEY=your-doubao-api-key         # 👈 填入你的密钥
 DOUBAO_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 DOUBAO_MODEL=doubao-seed-1-6-251015        # 👈 填入你的接入点ID
+
+# 百度千帆配置（有免费额度）
+QIANFAN_ACCESS_KEY=your-qianfan-ak        # 👈 填入你的API Key
+QIANFAN_SECRET_KEY=your-qianfan-sk        # 👈 填入你的Secret Key
+QIANFAN_MODEL=ERNIE-Speed-8K              # 👈 填入模型名称（推荐免费模型）
 
 # 思考模式（推荐配置）
 ENABLE_REASONING=false
@@ -350,16 +369,42 @@ pyinstaller --onefile --name=OCS-AI-Answerer ocs_ai_answerer_advanced.py
    DOUBAO_MODEL=doubao-seed-xxx    # 豆包接入点ID
    ```
 
+#### 方案三：使用百度千帆（免费额度充足）
+
+**优点**：免费额度多、稳定可靠、国内访问快
+
+1. **注册百度智能云账号**
+   - 访问：https://console.bce.baidu.com/qianfan/ais/console/applicationConsole/application
+   - 使用百度账号登录（没有则注册）
+
+2. **创建应用获取密钥**
+   - 在千帆控制台创建应用
+   - 获取 API Key（Access Key）
+   - 获取 Secret Key
+
+3. **选择模型**
+   - ERNIE-Speed-8K：免费、速度快、适合日常使用
+   - ERNIE-Lite-8K：免费、轻量级、响应更快
+   - ERNIE-4.0-8K：付费、效果最好
+
+4. **配置 .env 文件**
+   ```env
+   MODEL_PROVIDER=qianfan           # 使用千帆
+   QIANFAN_ACCESS_KEY=your_ak      # API Key
+   QIANFAN_SECRET_KEY=your_sk      # Secret Key
+   QIANFAN_MODEL=ERNIE-Speed-8K    # 模型名称
+   ```
+
 ### 环境变量详解
 
 #### 模型配置
 
 ```env
-# 模型提供商（deepseek、doubao 或 auto）
+# 模型提供商（deepseek、doubao、qianfan 或 auto）
 MODEL_PROVIDER=auto  # auto=智能选择（推荐）
 
 # DeepSeek配置
-DEEPSEEK_API_KEY=sk-xxxxx           # DeepSeek API密钥 👈 必填
+DEEPSEEK_API_KEY=sk-xxxxx           # DeepSeek API密钥 👈 可选
 DEEPSEEK_BASE_URL=https://api.deepseek.com  # API地址
 DEEPSEEK_MODEL=deepseek-chat        # 模型名称
 
@@ -367,6 +412,11 @@ DEEPSEEK_MODEL=deepseek-chat        # 模型名称
 DOUBAO_API_KEY=xxxxx                # 豆包API密钥 👈 可选
 DOUBAO_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 DOUBAO_MODEL=doubao-seed-1-6-251015 # 推理接入点ID 👈 可选
+
+# 千帆配置
+QIANFAN_ACCESS_KEY=xxxxx            # 千帆API Key 👈 可选
+QIANFAN_SECRET_KEY=xxxxx            # 千帆Secret Key 👈 可选
+QIANFAN_MODEL=ERNIE-Speed-8K        # 模型名称（推荐免费模型）
 ```
 
 #### 思考模式配置
@@ -850,13 +900,13 @@ MODEL_PROVIDER=auto  # 智能自动选择
 - 💰 **自动优化**：成本和效率最佳平衡
 
 **前提条件：**
-- 需要配置两个模型的API密钥
+- 需要配置多个模型的API密钥
 - 至少配置一个也可工作（会降级提示）
 
 **固定模式（手动选择）：**
 
 ```env
-MODEL_PROVIDER=deepseek  # 或 doubao
+MODEL_PROVIDER=deepseek  # 或 doubao、qianfan
 ```
 
 **DeepSeek** 适合：
@@ -868,6 +918,12 @@ MODEL_PROVIDER=deepseek  # 或 doubao
 - ✅ 有图片的题目
 - ✅ 需要多模态理解
 - ✅ 追求更高准确率
+
+**千帆** 适合：
+- ✅ 需要免费额度
+- ✅ 国内访问快
+- ✅ 纯文本题目
+- ✅ 稳定可靠
 
 ### Q2: 思考模式应该启用吗？
 
