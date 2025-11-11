@@ -1,0 +1,1105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OCS AI Answerer - 配置管理</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+
+        .nav-tabs {
+            display: flex;
+            background: #f5f7fa;
+            border-bottom: 2px solid #e4e7ed;
+            overflow-x: auto;
+        }
+
+        .nav-tab {
+            flex: 1;
+            min-width: 150px;
+            padding: 15px 20px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            color: #606266;
+            transition: all 0.3s;
+            font-weight: 500;
+            position: relative;
+        }
+
+        .nav-tab:hover {
+            background: #e8eaf0;
+            color: #409eff;
+        }
+
+        .nav-tab.active {
+            color: #409eff;
+            background: white;
+        }
+
+        .nav-tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: #409eff;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .tab-pane {
+            display: none;
+            animation: fadeIn 0.3s;
+        }
+
+        .tab-pane.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #409eff;
+        }
+
+        .section-title {
+            font-size: 1.3em;
+            color: #303133;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            color: #606266;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .form-help {
+            display: block;
+            margin-top: 5px;
+            color: #909399;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .form-input,
+        .form-select {
+            width: 100%;
+            padding: 12px 15px;
+            border: 1px solid #dcdfe6;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: all 0.3s;
+            background: white;
+        }
+
+        .form-input:focus,
+        .form-select:focus {
+            outline: none;
+            border-color: #409eff;
+            box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.1);
+        }
+
+        .form-input[type="number"] {
+            width: 200px;
+        }
+
+        .form-input.small {
+            width: 150px;
+        }
+
+        .switch-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 26px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #dcdfe6;
+            transition: 0.3s;
+            border-radius: 26px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #409eff;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(24px);
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-success {
+            background: #67c23a;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #85ce61;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(103, 194, 58, 0.4);
+        }
+
+        .btn-secondary {
+            background: #909399;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #a6a9ad;
+        }
+
+        .btn-warning {
+            background: #e6a23c;
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background: #ebb563;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .alert {
+            padding: 15px 20px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            display: none;
+            animation: slideDown 0.3s;
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .alert-success {
+            background: #f0f9ff;
+            border-left: 4px solid #67c23a;
+            color: #67c23a;
+        }
+
+        .alert-error {
+            background: #fef0f0;
+            border-left: 4px solid #f56c6c;
+            color: #f56c6c;
+        }
+
+        .alert-warning {
+            background: #fdf6ec;
+            border-left: 4px solid #e6a23c;
+            color: #e6a23c;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+            margin-bottom: 20px;
+        }
+
+        .card-title {
+            font-size: 1.2em;
+            color: #303133;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-online {
+            background: #f0f9ff;
+            color: #67c23a;
+        }
+
+        .status-offline {
+            background: #fef0f0;
+            color: #f56c6c;
+        }
+
+        .quick-links {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .quick-link-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            text-decoration: none;
+            transition: all 0.3s;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .quick-link-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+        }
+
+        .quick-link-icon {
+            font-size: 2em;
+        }
+
+        .quick-link-title {
+            font-size: 1.2em;
+            font-weight: 600;
+        }
+
+        .quick-link-desc {
+            opacity: 0.9;
+            font-size: 0.9em;
+        }
+
+        .config-preview {
+            background: #f5f7fa;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #909399;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #409eff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .info-item {
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border-left: 3px solid #409eff;
+        }
+
+        .info-label {
+            font-size: 12px;
+            color: #909399;
+            margin-bottom: 5px;
+        }
+
+        .info-value {
+            font-size: 18px;
+            color: #303133;
+            font-weight: 600;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                margin: 0;
+                border-radius: 0;
+            }
+            
+            .content {
+                padding: 15px;
+            }
+            
+            .quick-links {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 OCS AI Answerer</h1>
+            <p>智能答题系统 - 配置管理中心</p>
+        </div>
+
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="switchTab('home')">🏠 首页</button>
+            <button class="nav-tab" onclick="switchTab('model')">🧠 模型配置</button>
+            <button class="nav-tab" onclick="switchTab('reasoning')">💡 思考模式</button>
+            <button class="nav-tab" onclick="switchTab('parameters')">⚙️ AI参数</button>
+            <button class="nav-tab" onclick="switchTab('network')">🌐 网络设置</button>
+            <button class="nav-tab" onclick="switchTab('system')">🔧 系统配置</button>
+            <button class="nav-tab" onclick="switchTab('preview')">📋 配置预览</button>
+        </div>
+
+        <div class="content">
+            <div id="alert-container"></div>
+
+            <!-- 首页 -->
+            <div id="home" class="tab-pane active">
+                <div class="card">
+                    <div class="card-title">系统状态</div>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <div class="info-label">服务状态</div>
+                            <div class="info-value">
+                                <span id="status-badge" class="status-badge status-offline">检查中...</span>
+                            </div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">服务地址</div>
+                            <div class="info-value" id="service-url">-</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">当前模型</div>
+                            <div class="info-value" id="current-model">-</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">思考模式</div>
+                            <div class="info-value" id="reasoning-status">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">快速导航</div>
+                    <div class="quick-links">
+                        <a href="/viewer" target="_blank" class="quick-link-card">
+                            <div class="quick-link-icon">📊</div>
+                            <div class="quick-link-title">答题记录</div>
+                            <div class="quick-link-desc">查看历史答题数据和统计图表</div>
+                        </a>
+                        <a href="/api/docs" target="_blank" class="quick-link-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                            <div class="quick-link-icon">📚</div>
+                            <div class="quick-link-title">API文档</div>
+                            <div class="quick-link-desc">查看API接口文档和使用说明</div>
+                        </a>
+                        <a href="javascript:void(0)" onclick="switchTab('model')" class="quick-link-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                            <div class="quick-link-icon">⚡</div>
+                            <div class="quick-link-title">快速配置</div>
+                            <div class="quick-link-desc">配置AI模型和答题参数</div>
+                        </a>
+                        <a href="javascript:void(0)" onclick="testConnection()" class="quick-link-card" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
+                            <div class="quick-link-icon">🔌</div>
+                            <div class="quick-link-title">连接测试</div>
+                            <div class="quick-link-desc">测试与OCS系统的连接状态</div>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 模型配置 -->
+            <div id="model" class="tab-pane">
+                <div class="section">
+                    <div class="section-title">模型提供商</div>
+                    <div class="form-group">
+                        <label class="form-label">提供商选择</label>
+                        <select id="MODEL_PROVIDER" class="form-select">
+                            <option value="auto">自动选择（智能路由）</option>
+                            <option value="deepseek">DeepSeek</option>
+                            <option value="doubao">豆包 (Doubao)</option>
+                        </select>
+                        <span class="form-help">自动模式会根据题目类型智能选择最合适的模型</span>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">智能模型选择</div>
+                    <div class="form-group">
+                        <div class="switch-group">
+                            <label class="switch">
+                                <input type="checkbox" id="AUTO_MODEL_SELECTION">
+                                <span class="slider"></span>
+                            </label>
+                            <label class="form-label">启用智能选择</label>
+                        </div>
+                        <span class="form-help">根据题目内容自动选择最优模型（仅在提供商为"auto"时生效）</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">纯文本题目首选模型</label>
+                        <select id="PREFER_MODEL" class="form-select">
+                            <option value="deepseek">DeepSeek（成本低、速度快）</option>
+                            <option value="doubao">豆包</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">图片题目使用模型</label>
+                        <select id="IMAGE_MODEL" class="form-select">
+                            <option value="doubao">豆包（支持多模态）</option>
+                            <option value="deepseek">DeepSeek</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">DeepSeek 配置</div>
+                    <div class="form-group">
+                        <label class="form-label">API Key</label>
+                        <input type="password" id="DEEPSEEK_API_KEY" class="form-input" placeholder="sk-...">
+                        <span class="form-help">获取地址: https://platform.deepseek.com/api_keys</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">API Base URL</label>
+                        <input type="text" id="DEEPSEEK_BASE_URL" class="form-input" placeholder="https://api.deepseek.com">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">模型名称</label>
+                        <select id="DEEPSEEK_MODEL" class="form-select">
+                            <option value="deepseek-chat">deepseek-chat（通用对话）</option>
+                            <option value="deepseek-reasoner">deepseek-reasoner（深度推理）</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">豆包 (Doubao) 配置</div>
+                    <div class="form-group">
+                        <label class="form-label">API Key</label>
+                        <input type="password" id="DOUBAO_API_KEY" class="form-input" placeholder="your-api-key">
+                        <span class="form-help">获取地址: https://console.volcengine.com/ark</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">API Base URL</label>
+                        <input type="text" id="DOUBAO_BASE_URL" class="form-input" placeholder="https://ark.cn-beijing.volces.com/api/v3">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">推理接入点ID</label>
+                        <input type="text" id="DOUBAO_MODEL" class="form-input" placeholder="doubao-seed-1-6-251015">
+                        <span class="form-help">在豆包控制台创建推理接入点后获得</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 思考模式配置 -->
+            <div id="reasoning" class="tab-pane">
+                <div class="section">
+                    <div class="section-title">全局思考模式</div>
+                    <div class="form-group">
+                        <div class="switch-group">
+                            <label class="switch">
+                                <input type="checkbox" id="ENABLE_REASONING">
+                                <span class="slider"></span>
+                            </label>
+                            <label class="form-label">启用推理模式（全局）</label>
+                        </div>
+                        <span class="form-help">启用后所有题目都使用深度推理模式（DeepSeek自动切换到deepseek-reasoner）</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">思考强度（仅豆包）</label>
+                        <select id="REASONING_EFFORT" class="form-select">
+                            <option value="low">低强度（快速）</option>
+                            <option value="medium">中等强度（平衡）</option>
+                            <option value="high">高强度（深度）</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">自动思考触发</div>
+                    <div class="form-group">
+                        <div class="switch-group">
+                            <label class="switch">
+                                <input type="checkbox" id="AUTO_REASONING_FOR_MULTIPLE">
+                                <span class="slider"></span>
+                            </label>
+                            <label class="form-label">多选题自动启用深度思考</label>
+                        </div>
+                        <span class="form-help">多选题通常更复杂,建议启用</span>
+                    </div>
+                    <div class="form-group">
+                        <div class="switch-group">
+                            <label class="switch">
+                                <input type="checkbox" id="AUTO_REASONING_FOR_IMAGES">
+                                <span class="slider"></span>
+                            </label>
+                            <label class="form-label">带图片题目自动启用深度思考</label>
+                        </div>
+                        <span class="form-help">图片题目通常需要更复杂的分析</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI参数配置 -->
+            <div id="parameters" class="tab-pane">
+                <div class="section">
+                    <div class="section-title">基础参数</div>
+                    <div class="form-group">
+                        <label class="form-label">温度参数 (Temperature)</label>
+                        <input type="number" id="TEMPERATURE" class="form-input small" min="0" max="2" step="0.1" placeholder="0.1">
+                        <span class="form-help">范围: 0.0-2.0。推荐答题使用 0.1-0.3（更确定），对话使用 0.4-0.7</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Top-P 核采样</label>
+                        <input type="number" id="TOP_P" class="form-input small" min="0" max="1" step="0.05" placeholder="0.95">
+                        <span class="form-help">范围: 0.0-1.0。推荐 0.9-1.0，控制词汇选择的多样性</span>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">Token限制</div>
+                    <div class="form-group">
+                        <label class="form-label">最大输出Token数（普通模式）</label>
+                        <input type="number" id="MAX_TOKENS" class="form-input small" min="1" max="8192" placeholder="500">
+                        <span class="form-help">范围: 1-8192。选择题推荐 300-500，复杂题目可增加到 1000+</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">最大输出Token数（思考模式）</label>
+                        <input type="number" id="REASONING_MAX_TOKENS" class="form-input small" min="1" max="65536" placeholder="4096">
+                        <span class="form-help">范围: 1-65536。思考模式需要更大空间，推荐 4096-8000</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 网络设置 -->
+            <div id="network" class="tab-pane">
+                <div class="section">
+                    <div class="section-title">代理配置</div>
+                    <div class="form-group">
+                        <label class="form-label">HTTP 代理</label>
+                        <input type="text" id="HTTP_PROXY" class="form-input" placeholder="http://127.0.0.1:7890">
+                        <span class="form-help">可选。格式: http://host:port 或 socks5://host:port</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">HTTPS 代理</label>
+                        <input type="text" id="HTTPS_PROXY" class="form-input" placeholder="http://127.0.0.1:7890">
+                        <span class="form-help">可选。通常与HTTP代理相同</span>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">连接参数</div>
+                    <div class="form-group">
+                        <label class="form-label">请求超时时间（秒）</label>
+                        <input type="number" id="TIMEOUT" class="form-input small" min="10" max="3600" placeholder="180">
+                        <span class="form-help">API请求的最大等待时间，推荐 60-300 秒</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">最大重试次数</label>
+                        <input type="number" id="MAX_RETRIES" class="form-input small" min="0" max="10" placeholder="3">
+                        <span class="form-help">请求失败时的重试次数</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 系统配置 -->
+            <div id="system" class="tab-pane">
+                <div class="section">
+                    <div class="section-title">服务配置</div>
+                    <div class="form-group">
+                        <label class="form-label">监听地址</label>
+                        <input type="text" id="HOST" class="form-input small" placeholder="0.0.0.0">
+                        <span class="form-help">0.0.0.0 表示监听所有网卡，127.0.0.1 表示仅本地访问</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">监听端口</label>
+                        <input type="number" id="PORT" class="form-input small" min="1" max="65535" placeholder="5000">
+                        <span class="form-help">建议使用 5000-9999 之间的端口</span>
+                    </div>
+                    <div class="form-group">
+                        <div class="switch-group">
+                            <label class="switch">
+                                <input type="checkbox" id="DEBUG">
+                                <span class="slider"></span>
+                            </label>
+                            <label class="form-label">调试模式</label>
+                        </div>
+                        <span class="form-help">启用后会输出详细的调试信息（生产环境请关闭）</span>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">日志配置</div>
+                    <div class="form-group">
+                        <label class="form-label">CSV日志文件路径</label>
+                        <input type="text" id="CSV_LOG_FILE" class="form-input" placeholder="ocs_answers_log.csv">
+                        <span class="form-help">答题记录保存的文件名（相对路径或绝对路径）</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">日志级别</label>
+                        <select id="LOG_LEVEL" class="form-select">
+                            <option value="DEBUG">DEBUG（调试）</option>
+                            <option value="INFO">INFO（信息）</option>
+                            <option value="WARNING">WARNING（警告）</option>
+                            <option value="ERROR">ERROR（错误）</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 配置预览 -->
+            <div id="preview" class="tab-pane">
+                <div class="section">
+                    <div class="section-title">当前配置（.env格式）</div>
+                    <div id="config-preview" class="config-preview">加载中...</div>
+                    <div class="btn-group">
+                        <button class="btn btn-primary" onclick="copyConfig()">📋 复制配置</button>
+                        <button class="btn btn-secondary" onclick="downloadConfig()">💾 下载为.env文件</button>
+                        <button class="btn btn-warning" onclick="loadConfig()">🔄 刷新预览</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 操作按钮 -->
+            <div class="btn-group" style="margin-top: 30px; position: sticky; bottom: 20px; background: white; padding: 15px 0; border-top: 1px solid #e4e7ed;">
+                <button class="btn btn-success" onclick="saveConfig()">💾 保存配置</button>
+                <button class="btn btn-primary" onclick="applyConfig()">✅ 保存并应用（需重启服务）</button>
+                <button class="btn btn-secondary" onclick="resetConfig()">🔄 重置为默认值</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        const API_BASE = window.location.origin;
+        let currentTab = 'home';
+
+        // 配置字段列表
+        const CONFIG_FIELDS = [
+            'MODEL_PROVIDER', 'AUTO_MODEL_SELECTION', 'PREFER_MODEL', 'IMAGE_MODEL',
+            'DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL', 'DEEPSEEK_MODEL',
+            'DOUBAO_API_KEY', 'DOUBAO_BASE_URL', 'DOUBAO_MODEL',
+            'ENABLE_REASONING', 'REASONING_EFFORT', 'AUTO_REASONING_FOR_MULTIPLE', 'AUTO_REASONING_FOR_IMAGES',
+            'TEMPERATURE', 'MAX_TOKENS', 'REASONING_MAX_TOKENS', 'TOP_P',
+            'HTTP_PROXY', 'HTTPS_PROXY', 'TIMEOUT', 'MAX_RETRIES',
+            'HOST', 'PORT', 'DEBUG', 'CSV_LOG_FILE', 'LOG_LEVEL'
+        ];
+
+        // 页面加载时初始化
+        window.onload = function() {
+            loadConfig();
+            checkServiceStatus();
+            // 每30秒检查一次服务状态
+            setInterval(checkServiceStatus, 30000);
+        };
+
+        // 切换标签页
+        function switchTab(tabName) {
+            // 隐藏所有标签页
+            document.querySelectorAll('.tab-pane').forEach(pane => {
+                pane.classList.remove('active');
+            });
+            document.querySelectorAll('.nav-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+
+            // 显示选中的标签页
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+            currentTab = tabName;
+
+            // 如果切换到预览页,刷新预览
+            if (tabName === 'preview') {
+                generatePreview();
+            }
+        }
+
+        // 显示提示消息
+        function showAlert(message, type = 'success') {
+            const container = document.getElementById('alert-container');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            alert.style.display = 'block';
+            
+            container.innerHTML = '';
+            container.appendChild(alert);
+            
+            setTimeout(() => {
+                alert.style.display = 'none';
+            }, 5000);
+        }
+
+        // 加载配置
+        async function loadConfig() {
+            try {
+                const response = await fetch(`${API_BASE}/api/config`);
+                if (!response.ok) throw new Error('加载配置失败');
+                
+                const config = await response.json();
+                
+                // 填充表单
+                CONFIG_FIELDS.forEach(field => {
+                    const element = document.getElementById(field);
+                    if (!element) return;
+                    
+                    const value = config[field];
+                    
+                    if (element.type === 'checkbox') {
+                        element.checked = value === 'true' || value === true;
+                    } else {
+                        element.value = value || '';
+                    }
+                });
+
+                // 更新首页状态
+                updateHomeStatus(config);
+                
+                showAlert('配置加载成功', 'success');
+            } catch (error) {
+                console.error('加载配置失败:', error);
+                showAlert('加载配置失败: ' + error.message, 'error');
+            }
+        }
+
+        // 更新首页状态显示
+        function updateHomeStatus(config) {
+            document.getElementById('service-url').textContent = `${API_BASE}`;
+            document.getElementById('current-model').textContent = config.MODEL_PROVIDER || 'auto';
+            document.getElementById('reasoning-status').textContent = 
+                (config.ENABLE_REASONING === 'true' || config.ENABLE_REASONING === true) ? '✅ 已启用' : '❌ 未启用';
+        }
+
+        // 检查服务状态
+        async function checkServiceStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/?t=${Date.now()}`, { method: 'HEAD' });
+                const badge = document.getElementById('status-badge');
+                
+                if (response.ok) {
+                    badge.className = 'status-badge status-online';
+                    badge.textContent = '🟢 运行中';
+                } else {
+                    badge.className = 'status-badge status-offline';
+                    badge.textContent = '🔴 异常';
+                }
+            } catch (error) {
+                const badge = document.getElementById('status-badge');
+                badge.className = 'status-badge status-offline';
+                badge.textContent = '🔴 离线';
+            }
+        }
+
+        // 保存配置
+        async function saveConfig() {
+            const config = {};
+            
+            CONFIG_FIELDS.forEach(field => {
+                const element = document.getElementById(field);
+                if (!element) return;
+                
+                if (element.type === 'checkbox') {
+                    config[field] = element.checked ? 'true' : 'false';
+                } else {
+                    config[field] = element.value;
+                }
+            });
+
+            try {
+                const response = await fetch(`${API_BASE}/api/config`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+
+                if (!response.ok) throw new Error('保存配置失败');
+                
+                const result = await response.json();
+                showAlert('配置保存成功！请重启服务以应用新配置。', 'success');
+            } catch (error) {
+                console.error('保存配置失败:', error);
+                showAlert('保存配置失败: ' + error.message, 'error');
+            }
+        }
+
+        // 保存并应用配置
+        async function applyConfig() {
+            await saveConfig();
+            showAlert('配置已保存！请手动重启服务以应用新配置（关闭当前服务后重新运行 start.bat）', 'warning');
+        }
+
+        // 重置配置
+        function resetConfig() {
+            if (!confirm('确定要重置所有配置为默认值吗？此操作不可撤销！')) return;
+            
+            // 重置为默认值
+            const defaults = {
+                MODEL_PROVIDER: 'auto',
+                AUTO_MODEL_SELECTION: true,
+                PREFER_MODEL: 'deepseek',
+                IMAGE_MODEL: 'doubao',
+                DEEPSEEK_BASE_URL: 'https://api.deepseek.com',
+                DEEPSEEK_MODEL: 'deepseek-chat',
+                DOUBAO_BASE_URL: 'https://ark.cn-beijing.volces.com/api/v3',
+                DOUBAO_MODEL: 'doubao-seed-1-6-251015',
+                ENABLE_REASONING: false,
+                REASONING_EFFORT: 'medium',
+                AUTO_REASONING_FOR_MULTIPLE: true,
+                AUTO_REASONING_FOR_IMAGES: true,
+                TEMPERATURE: '0.1',
+                MAX_TOKENS: '500',
+                REASONING_MAX_TOKENS: '4096',
+                TOP_P: '0.95',
+                TIMEOUT: '180.0',
+                MAX_RETRIES: '3',
+                HOST: '0.0.0.0',
+                PORT: '5000',
+                DEBUG: false,
+                CSV_LOG_FILE: 'ocs_answers_log.csv',
+                LOG_LEVEL: 'INFO'
+            };
+
+            CONFIG_FIELDS.forEach(field => {
+                const element = document.getElementById(field);
+                if (!element) return;
+                
+                const value = defaults[field];
+                
+                if (element.type === 'checkbox') {
+                    element.checked = value === true;
+                } else {
+                    element.value = value || '';
+                }
+            });
+
+            showAlert('配置已重置为默认值（未保存，请点击"保存配置"按钮）', 'warning');
+        }
+
+        // 生成配置预览
+        function generatePreview() {
+            const config = {};
+            
+            CONFIG_FIELDS.forEach(field => {
+                const element = document.getElementById(field);
+                if (!element) return;
+                
+                if (element.type === 'checkbox') {
+                    config[field] = element.checked ? 'true' : 'false';
+                } else {
+                    config[field] = element.value;
+                }
+            });
+
+            // 生成.env格式
+            let envContent = '# OCS AI Answerer 配置文件\n';
+            envContent += '# 由配置面板生成于: ' + new Date().toLocaleString('zh-CN') + '\n\n';
+            
+            envContent += '# ==================== 模型配置 ====================\n';
+            envContent += `MODEL_PROVIDER=${config.MODEL_PROVIDER}\n\n`;
+            
+            envContent += '# ==================== 智能模型选择 ====================\n';
+            envContent += `AUTO_MODEL_SELECTION=${config.AUTO_MODEL_SELECTION}\n`;
+            envContent += `PREFER_MODEL=${config.PREFER_MODEL}\n`;
+            envContent += `IMAGE_MODEL=${config.IMAGE_MODEL}\n\n`;
+            
+            envContent += '# ==================== DeepSeek配置 ====================\n';
+            envContent += `DEEPSEEK_API_KEY=${config.DEEPSEEK_API_KEY}\n`;
+            envContent += `DEEPSEEK_BASE_URL=${config.DEEPSEEK_BASE_URL}\n`;
+            envContent += `DEEPSEEK_MODEL=${config.DEEPSEEK_MODEL}\n\n`;
+            
+            envContent += '# ==================== 豆包配置 ====================\n';
+            envContent += `DOUBAO_API_KEY=${config.DOUBAO_API_KEY}\n`;
+            envContent += `DOUBAO_BASE_URL=${config.DOUBAO_BASE_URL}\n`;
+            envContent += `DOUBAO_MODEL=${config.DOUBAO_MODEL}\n\n`;
+            
+            envContent += '# ==================== 思考模式 ====================\n';
+            envContent += `ENABLE_REASONING=${config.ENABLE_REASONING}\n`;
+            envContent += `REASONING_EFFORT=${config.REASONING_EFFORT}\n`;
+            envContent += `AUTO_REASONING_FOR_MULTIPLE=${config.AUTO_REASONING_FOR_MULTIPLE}\n`;
+            envContent += `AUTO_REASONING_FOR_IMAGES=${config.AUTO_REASONING_FOR_IMAGES}\n\n`;
+            
+            envContent += '# ==================== AI参数 ====================\n';
+            envContent += `TEMPERATURE=${config.TEMPERATURE}\n`;
+            envContent += `MAX_TOKENS=${config.MAX_TOKENS}\n`;
+            envContent += `REASONING_MAX_TOKENS=${config.REASONING_MAX_TOKENS}\n`;
+            envContent += `TOP_P=${config.TOP_P}\n\n`;
+            
+            envContent += '# ==================== 网络配置 ====================\n';
+            envContent += `HTTP_PROXY=${config.HTTP_PROXY}\n`;
+            envContent += `HTTPS_PROXY=${config.HTTPS_PROXY}\n`;
+            envContent += `TIMEOUT=${config.TIMEOUT}\n`;
+            envContent += `MAX_RETRIES=${config.MAX_RETRIES}\n\n`;
+            
+            envContent += '# ==================== 服务配置 ====================\n';
+            envContent += `HOST=${config.HOST}\n`;
+            envContent += `PORT=${config.PORT}\n`;
+            envContent += `DEBUG=${config.DEBUG}\n`;
+            envContent += `LOG_LEVEL=${config.LOG_LEVEL}\n\n`;
+            
+            envContent += '# ==================== CSV日志配置 ====================\n';
+            envContent += `CSV_LOG_FILE=${config.CSV_LOG_FILE}\n`;
+
+            document.getElementById('config-preview').textContent = envContent;
+        }
+
+        // 复制配置
+        function copyConfig() {
+            const preview = document.getElementById('config-preview').textContent;
+            navigator.clipboard.writeText(preview).then(() => {
+                showAlert('配置已复制到剪贴板', 'success');
+            }).catch(err => {
+                showAlert('复制失败: ' + err.message, 'error');
+            });
+        }
+
+        // 下载配置
+        function downloadConfig() {
+            const preview = document.getElementById('config-preview').textContent;
+            const blob = new Blob([preview], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '.env';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showAlert('配置文件已下载', 'success');
+        }
+
+        // 测试连接
+        async function testConnection() {
+            showAlert('正在测试连接...', 'warning');
+            try {
+                const start = Date.now();
+                const response = await fetch(`${API_BASE}/?t=${Date.now()}`);
+                const latency = Date.now() - start;
+                
+                if (response.ok) {
+                    showAlert(`连接成功！延迟: ${latency}ms`, 'success');
+                } else {
+                    showAlert('连接失败: 服务器返回错误', 'error');
+                }
+            } catch (error) {
+                showAlert('连接失败: ' + error.message, 'error');
+            }
+        }
+    </script>
+</body>
+</html>
