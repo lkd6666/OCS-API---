@@ -6,7 +6,7 @@ OCS脚本智能答题API - 多模型支持版本
 支持：思考模式、自定义配置
 """
 
-from flask import Flask, request, jsonify, make_response
+from flask import Flask, request, jsonify, make_response, redirect, send_from_directory
 from flask_cors import CORS
 from openai import OpenAI
 import os
@@ -19,7 +19,11 @@ import csv
 from datetime import datetime
 import base64
 from io import BytesIO
-import threading
+import secrets
+import hashlib
+import json
+from functools import wraps
+from collections import defaultdict
 
 # 加载环境变量
 load_dotenv()
@@ -78,20 +82,182 @@ HOST = os.getenv('HOST', '0.0.0.0')
 PORT = int(os.getenv('PORT', 5000))
 DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
+# 安全配置
+SECRET_KEY_FILE = os.getenv('SECRET_KEY_FILE', '.secret_key')  # 密钥文件路径
+RATE_LIMIT_ATTEMPTS = int(os.getenv('RATE_LIMIT_ATTEMPTS', '5'))  # 允许的连续错误次数
+RATE_LIMIT_WINDOW = int(os.getenv('RATE_LIMIT_WINDOW', '300'))  # 限流时间窗口（秒）
+
 # ==================== 配置区域结束 ====================
 
-# 配置日志
+# 配置日志（必须在SecurityManager之前初始化）
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
+# ==================== 安全认证系统 ====================
+
+class SecurityManager:
+    """安全管理器：处理密钥认证和限流"""
+    
+    def __init__(self, key_file=SECRET_KEY_FILE):
+        self.key_file = key_file
+        self.secret_key_hash = None
+        self.failed_attempts = defaultdict(list)  # IP -> [timestamp1, timestamp2, ...]
+        self.rate_limit_attempts = RATE_LIMIT_ATTEMPTS
+        self.rate_limit_window = RATE_LIMIT_WINDOW
+        
+        # 初始化密钥
+        self._init_secret_key()
+    
+    def _init_secret_key(self):
+        """初始化密钥：如果不存在则生成，否则加载"""
+        if os.path.exists(self.key_file):
+            # 加载现有密钥
+            try:
+                with open(self.key_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.secret_key_hash = data.get('key_hash')
+                    logger.info(f"✅ 已加载现有访问密钥")
+            except Exception as e:
+                logger.error(f"❌ 加载密钥失败: {e}，将生成新密钥")
+                self._generate_new_key()
+        else:
+            # 首次启动，生成新密钥
+            self._generate_new_key()
+    
+    def _generate_new_key(self):
+        """生成新的64位随机密钥"""
+        # 生成64位随机hex字符串（256位熵）
+        raw_key = secrets.token_hex(32)  # 32字节 = 64个hex字符
+        
+        # 存储密钥的SHA256哈希值
+        self.secret_key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+        
+        # 保存到文件
+        try:
+            with open(self.key_file, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'key_hash': self.secret_key_hash,
+                    'created_at': datetime.now().isoformat(),
+                    'raw_key': raw_key  # 仅首次生成时保存明文密钥
+                }, f, indent=2)
+            
+            logger.info("=" * 80)
+            logger.info("🔐 首次启动：已生成访问密钥")
+            logger.info("=" * 80)
+            logger.info(f"   访问密钥: {raw_key}")
+            logger.info("=" * 80)
+            logger.info(f"⚠️  请妥善保管此密钥！")
+            logger.info(f"   - 密钥已保存到: {self.key_file}")
+            logger.info(f"   - 访问配置页面和敏感接口需要此密钥")
+            logger.info(f"   - 可在配置页面修改密钥")
+            logger.info("=" * 80)
+        except Exception as e:
+            logger.error(f"❌ 保存密钥失败: {e}")
+    
+    def verify_key(self, provided_key: str) -> bool:
+        """验证提供的密钥是否正确"""
+        if not provided_key:
+            return False
+        
+        provided_hash = hashlib.sha256(provided_key.encode()).hexdigest()
+        return provided_hash == self.secret_key_hash
+    
+    def update_key(self, old_key: str, new_key: str) -> Tuple[bool, str]:
+        """更新密钥"""
+        # 验证旧密钥
+        if not self.verify_key(old_key):
+            return False, "旧密钥错误"
+        
+        # 验证新密钥格式（至少8字符，像普通密码）
+        if len(new_key) < 8:
+            return False, "新密钥长度至少8字符"
+        
+        # 生成新密钥的哈希
+        new_hash = hashlib.sha256(new_key.encode()).hexdigest()
+        
+        # 保存新密钥
+        try:
+            with open(self.key_file, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'key_hash': new_hash,
+                    'updated_at': datetime.now().isoformat()
+                }, f, indent=2)
+            
+            self.secret_key_hash = new_hash
+            logger.info("✅ 访问密钥已更新")
+            return True, "密钥更新成功"
+        except Exception as e:
+            logger.error(f"❌ 更新密钥失败: {e}")
+            return False, f"更新失败: {str(e)}"
+    
+    def check_rate_limit(self, ip: str) -> Tuple[bool, str]:
+        """检查IP是否被限流"""
+        now = time.time()
+        
+        # 清理过期的失败记录
+        self.failed_attempts[ip] = [
+            ts for ts in self.failed_attempts[ip]
+            if now - ts < self.rate_limit_window
+        ]
+        
+        # 检查是否超过限制
+        if len(self.failed_attempts[ip]) >= self.rate_limit_attempts:
+            remaining_time = int(self.rate_limit_window - (now - self.failed_attempts[ip][0]))
+            return False, f"错误次数过多，请{remaining_time}秒后重试"
+        
+        return True, ""
+    
+    def record_failed_attempt(self, ip: str):
+        """记录失败的认证尝试"""
+        self.failed_attempts[ip].append(time.time())
+    
+    def clear_failed_attempts(self, ip: str):
+        """清除失败记录（认证成功后调用）"""
+        if ip in self.failed_attempts:
+            del self.failed_attempts[ip]
+
+# 全局安全管理器
+security_manager = SecurityManager()
+
+def require_auth(f):
+    """装饰器：要求API密钥认证"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # 获取客户端IP
+        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        if ',' in client_ip:
+            client_ip = client_ip.split(',')[0].strip()
+        
+        # 检查限流
+        allowed, message = security_manager.check_rate_limit(client_ip)
+        if not allowed:
+            return jsonify({"error": message, "code": "RATE_LIMITED"}), 429
+        
+        # 从请求头或查询参数获取密钥
+        api_key = request.headers.get('X-API-Key') or request.args.get('api_key')
+        
+        if not api_key:
+            security_manager.record_failed_attempt(client_ip)
+            return jsonify({"error": "缺少API密钥", "code": "MISSING_KEY"}), 401
+        
+        # 验证密钥
+        if not security_manager.verify_key(api_key):
+            security_manager.record_failed_attempt(client_ip)
+            return jsonify({"error": "API密钥无效", "code": "INVALID_KEY"}), 403
+        
+        # 认证成功，清除失败记录
+        security_manager.clear_failed_attempts(client_ip)
+        
+        return f(*args, **kwargs)
+    return decorated_function
+
+# ==================== 安全认证系统结束 ====================
+
 app = Flask(__name__)
 CORS(app)
-
-# CSV文件写入锁（支持并发）
-csv_write_lock = threading.Lock()
 
 # 题型映射
 QUESTION_TYPES = {
@@ -377,62 +543,16 @@ class ModelClient:
         # 构建消息的函数
         def build_messages(use_image_urls: bool):
             if use_image_urls and selected_provider == 'doubao' and base64_images:
-                # 豆包支持图文混排（多模态）- 支持文本和图片交替排列
+                # 豆包支持图片输入（多模态）- 使用base64格式
                 user_content = []
-                
-                # 图文混排策略:
-                # 1. 如果题目/选项中有图片URL,将它们按出现顺序插入到对应位置
-                # 2. 否则,先添加所有图片,再添加文本
-                
-                # 创建图片URL到base64的映射
-                url_to_base64 = {}
-                if image_urls and len(image_urls) == len(base64_images):
-                    url_to_base64 = dict(zip(image_urls, base64_images))
-                
-                # 检查prompt中是否包含图片URL(需要混排)
-                has_embedded_images = any(url in prompt for url in image_urls) if image_urls else False
-                
-                if has_embedded_images and url_to_base64:
-                    # 图文混排模式:将prompt分割,在图片URL位置插入图片
-                    logger.info("📝 使用图文混排模式")
-                    
-                    # 构建正则表达式匹配所有图片URL
-                    import re
-                    # 转义URL中的特殊字符并构建pattern
-                    url_patterns = [re.escape(url) for url in image_urls]
-                    pattern = '|'.join(url_patterns)
-                    
-                    # 分割文本,保留分隔符(图片URL)
-                    parts = re.split(f'({pattern})', prompt)
-                    
-                    for part in parts:
-                        part = part.strip()
-                        if not part:
-                            continue
-                        
-                        if part in url_to_base64:
-                            # 这是图片URL,插入图片
-                            user_content.append({
-                                "type": "image_url",
-                                "image_url": {"url": url_to_base64[part]}
-                            })
-                        else:
-                            # 这是文本,插入文本
-                            if part:  # 确保不是空字符串
-                                user_content.append({
-                                    "type": "text",
-                                    "text": part
-                                })
-                else:
-                    # 传统模式:先添加所有图片,再添加文本
-                    logger.info("📝 使用传统模式(先图片后文本)")
-                    for base64_data in base64_images:
-                        user_content.append({
-                            "type": "image_url",
-                            "image_url": {"url": base64_data}
-                        })
-                    # 再添加文本
-                    user_content.append({"type": "text", "text": prompt})
+                # 先添加图片（使用base64格式）
+                for base64_data in base64_images:
+                    user_content.append({
+                        "type": "image_url",
+                        "image_url": {"url": base64_data}  # 直接使用data URI
+                    })
+                # 再添加文本
+                user_content.append({"type": "text", "text": prompt})
                 
                 return [
                     {"role": "system", "content": "你是一个专业、严谨的答题助手。你必须根据题目、图片和选项给出准确的答案，严格按照要求的格式输出，不要有任何多余的内容。"},
@@ -631,16 +751,6 @@ class PromptBuilder:
     """智能Prompt构建器"""
     
     @staticmethod
-    def _is_image_url(text: str) -> bool:
-        """判断文本是否为图片URL"""
-        if not text:
-            return False
-        text = str(text).strip().lower()
-        # 检查是否以http开头且包含图片扩展名
-        return (text.startswith('http://') or text.startswith('https://')) and \
-               any(ext in text for ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'])
-    
-    @staticmethod
     def build_prompt(question: str, options: List[str], q_type: str) -> str:
         """根据题型构建prompt"""
         
@@ -658,12 +768,9 @@ class PromptBuilder:
     @staticmethod
     def _build_single_choice_prompt(question: str, options: List[str]) -> str:
         """构建单选题prompt"""
-        # 检查选项中是否有图片URL
-        has_image_options = any(PromptBuilder._is_image_url(opt) for opt in options)
-        
         options_text = "\n".join([f"{chr(65+i)}. {opt}" for i, opt in enumerate(options)])
         
-        base_prompt = f"""你是一个专业的在线考试答题助手，请严格按照要求回答。
+        return f"""你是一个专业的在线考试答题助手，请严格按照要求回答。
 
 【题目类型】单选题（只能选择一个正确答案）
 
@@ -677,39 +784,20 @@ class PromptBuilder:
 1. 仔细分析题目和所有选项
 2. 只选择一个最正确的答案
 3. 必须从给定的选项中选择，不能自己编造
-4. 回答格式：直接输出选项的完整原始内容，不要包含A、B、C等标识符
-5. 只输出答案的原始内容，不要有任何解释、分析或额外文字"""
-        
-        if has_image_options:
-            base_prompt += """
-6. **如果选项是图片URL（http://或https://开头），必须原样输出完整的URL地址**
-7. **不要尝试描述图片内容，直接输出URL字符串**"""
-        
-        base_prompt += """
+4. 回答格式：直接输出选项内容，不要包含A、B、C等标识符
+5. 只输出答案内容，不要有任何解释、分析或额外文字
 
 【示例】
-如果正确答案是选项"北京"，则只输出：北京"""
-        
-        if has_image_options:
-            base_prompt += """
-如果正确答案是图片选项"https://example.com/image.jpg"，则只输出：https://example.com/image.jpg"""
-        
-        base_prompt += """
+如果正确答案是选项"北京"，则只输出：北京
 
 现在请回答上述题目："""
-        
-        return base_prompt
 
     @staticmethod
     def _build_multiple_choice_prompt(question: str, options: List[str]) -> str:
         """构建多选题prompt"""
-        # 检查选项中是否有图片URL
-        has_image_options = any(PromptBuilder._is_image_url(opt) for opt in options)
-        
         options_text = "\n".join([f"{chr(65+i)}. {opt}" for i, opt in enumerate(options)])
         
-        # 基础说明
-        base_instruction = f"""你是一个专业的在线考试答题助手，请严格按照要求回答。
+        return f"""你是一个专业的在线考试答题助手，请严格按照要求回答。
 
 【题目类型】多选题（可能有多个正确答案）
 
@@ -719,50 +807,18 @@ class PromptBuilder:
 【选项】
 {options_text}
 
-【回答要求 - 非常重要】
+【回答要求】
 1. 仔细分析题目，找出所有正确的选项
 2. 多选题通常有2个或以上的正确答案
-3. **必须输出选项的完整原始内容，不要输出A、B、C、D等字母标识**
+3. 必须从给定的选项中选择，不能自己编造
 4. 多个答案之间用井号#分隔
-5. 按照选项顺序输出（即A的内容在前，B的内容在后，以此类推）
-6. **只输出选项的原始内容，不要有任何解释、分析、字母标识或额外文字**
-7. 确保完整准确地复制选项原始内容，包括图片URL，不要遗漏或修改任何字符"""
-        
-        # 如果有图片选项，添加特殊说明
-        if has_image_options:
-            image_instruction = """
+5. 回答格式：选项1#选项2#选项3（不要包含A、B、C等标识符）
+6. 只输出答案内容，不要有任何解释、分析或额外文字
 
-【⚠️ 特别注意 - 图片选项处理】
-8. **选项中包含图片URL（http://或https://开头，以.jpg/.png/.gif等结尾）**
-9. **如果选项是图片URL，必须原样输出完整的URL地址**
-10. **不要尝试描述图片内容，直接输出URL字符串**
-11. 图片已经在上下文中提供，你能看到图片内容，根据图片内容判断是否正确"""
-            base_instruction += image_instruction
-        
-        # 添加示例
-        examples = """
+【示例】
+如果正确答案是"北京"和"上海"两个选项，则输出：北京#上海
 
-【输出格式示例】
-示例1 - 文本选项：
-如果A和C选项正确，A选项内容是"北京是中国的首都"，C选项内容是"上海是中国最大的城市"：
-错误输出：A#C
-错误输出：北京#上海
-正确输出：北京是中国的首都#上海是中国最大的城市"""
-        
-        if has_image_options:
-            examples += """
-
-示例2 - 图片选项：
-如果选项A是文本"正确答案"，选项B是图片URL "https://example.com/image.jpg"，选项C是文本"另一个答案"，且A、B、C都正确：
-错误输出：A#B#C
-错误输出：正确答案#图片#另一个答案
-正确输出：正确答案#https://example.com/image.jpg#另一个答案"""
-        
-        examples += """
-
-现在请回答上述题目，记住：只输出选项的完整原始内容（文本或URL），用#分隔，不要有任何其他内容："""
-        
-        return base_instruction + examples
+现在请回答上述题目："""
 
     @staticmethod
     def _build_judgement_prompt(question: str, options: List[str]) -> str:
@@ -1158,7 +1214,7 @@ def save_to_csv(question: str, options: List[str], q_type: str, raw_answer: str,
                 total_time: float, model_name: str, reasoning_used: bool,
                 prompt_tokens: int = 0, completion_tokens: int = 0, provider: str = ''):
     """
-    保存答题记录到CSV文件（线程安全）
+    保存答题记录到CSV文件
     
     Args:
         question: 题目
@@ -1184,78 +1240,76 @@ def save_to_csv(question: str, options: List[str], q_type: str, raw_answer: str,
         '输入Token', '输出Token', '总Token', '费用(元)', '提供商'
     ]
     
-    # 使用线程锁保护CSV文件操作（支持并发）
-    with csv_write_lock:
-        # 检查并修复CSV文件表头（如果需要）
-        if os.path.exists(csv_file):
-            check_and_fix_csv_header(csv_file, headers)
-        
-        # 检查文件是否存在，如果不存在则创建并写入表头
-        file_exists = os.path.exists(csv_file)
-        
-        try:
-            # 使用UTF-8 BOM编码，确保Excel可以正确显示中文
-            with open(csv_file, 'a', newline='', encoding='utf-8-sig') as f:
-                writer = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
-                
-                # 如果文件不存在，写入表头
-                if not file_exists:
-                    writer.writerow(headers)
-                
-                # 准备数据
-                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                options_str = ' | '.join(options) if options else ''
-                reasoning_str = reasoning if reasoning else ''
-                
-                # 计算费用（基于DeepSeek和豆包的官方价格）
-                # DeepSeek: 输入缓存命中0.2元/百万tokens，缓存未命中2元/百万tokens，输出3元/百万tokens
-                # 豆包-Seed-1.6: 推理输入0.8元/百万tokens，推理输出2元/百万tokens
-                # 注意：这里假设缓存未命中（实际应该根据缓存状态判断）
-                cost = 0.0
-                if provider.lower() == 'deepseek':
-                    # DeepSeek价格（假设缓存未命中）
-                    input_cost = (prompt_tokens / 1000000) * 2.0  # 2元/百万tokens
-                    output_cost = (completion_tokens / 1000000) * 3.0  # 3元/百万tokens
-                    cost = input_cost + output_cost
-                elif provider.lower() == 'doubao':
-                    # 豆包-Seed-1.6 官方价格
-                    input_cost = (prompt_tokens / 1000000) * 0.8  # 0.8元/百万tokens
-                    output_cost = (completion_tokens / 1000000) * 2.0  # 2元/百万tokens
-                    cost = input_cost + output_cost
-                else:
-                    # 未知提供商，使用默认价格（参考DeepSeek）
-                    input_cost = (prompt_tokens / 1000000) * 2.0
-                    output_cost = (completion_tokens / 1000000) * 3.0
-                    cost = input_cost + output_cost
-                
-                total_tokens = prompt_tokens + completion_tokens
-                
-                # 写入数据行（所有字段都会被正确转义）
-                row = [
-                    timestamp,
-                    q_type,
-                    question,
-                    options_str,
-                    raw_answer,
-                    reasoning_str,
-                    processed_answer,
-                    f"{ai_time:.2f}",
-                    f"{total_time:.2f}",
-                    model_name,
-                    '是' if reasoning_used else '否',
-                    str(prompt_tokens),
-                    str(completion_tokens),
-                    str(total_tokens),
-                    f"{cost:.6f}",
-                    provider.upper() if provider else ''
-                ]
-                
-                writer.writerow(row)
-                logger.debug(f"CSV记录已保存: {len(row)}个字段，思考过程长度: {len(reasoning_str)}")
-                
-        except Exception as e:
-            # CSV记录失败不影响答题流程，只记录日志
-            logger.warning(f"保存CSV记录失败: {str(e)}", exc_info=True)
+    # 检查并修复CSV文件表头（如果需要）
+    if os.path.exists(csv_file):
+        check_and_fix_csv_header(csv_file, headers)
+    
+    # 检查文件是否存在，如果不存在则创建并写入表头
+    file_exists = os.path.exists(csv_file)
+    
+    try:
+        # 使用UTF-8 BOM编码，确保Excel可以正确显示中文
+        with open(csv_file, 'a', newline='', encoding='utf-8-sig') as f:
+            writer = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
+            
+            # 如果文件不存在，写入表头
+            if not file_exists:
+                writer.writerow(headers)
+            
+            # 准备数据
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            options_str = ' | '.join(options) if options else ''
+            reasoning_str = reasoning if reasoning else ''
+            
+            # 计算费用（基于DeepSeek和豆包的官方价格）
+            # DeepSeek: 输入缓存命中0.2元/百万tokens，缓存未命中2元/百万tokens，输出3元/百万tokens
+            # 豆包-Seed-1.6: 推理输入0.8元/百万tokens，推理输出2元/百万tokens
+            # 注意：这里假设缓存未命中（实际应该根据缓存状态判断）
+            cost = 0.0
+            if provider.lower() == 'deepseek':
+                # DeepSeek价格（假设缓存未命中）
+                input_cost = (prompt_tokens / 1000000) * 2.0  # 2元/百万tokens
+                output_cost = (completion_tokens / 1000000) * 3.0  # 3元/百万tokens
+                cost = input_cost + output_cost
+            elif provider.lower() == 'doubao':
+                # 豆包-Seed-1.6 官方价格
+                input_cost = (prompt_tokens / 1000000) * 0.8  # 0.8元/百万tokens
+                output_cost = (completion_tokens / 1000000) * 2.0  # 2元/百万tokens
+                cost = input_cost + output_cost
+            else:
+                # 未知提供商，使用默认价格（参考DeepSeek）
+                input_cost = (prompt_tokens / 1000000) * 2.0
+                output_cost = (completion_tokens / 1000000) * 3.0
+                cost = input_cost + output_cost
+            
+            total_tokens = prompt_tokens + completion_tokens
+            
+            # 写入数据行（所有字段都会被正确转义）
+            row = [
+                timestamp,
+                q_type,
+                question,
+                options_str,
+                raw_answer,
+                reasoning_str,
+                processed_answer,
+                f"{ai_time:.2f}",
+                f"{total_time:.2f}",
+                model_name,
+                '是' if reasoning_used else '否',
+                str(prompt_tokens),
+                str(completion_tokens),
+                str(total_tokens),
+                f"{cost:.6f}",
+                provider.upper() if provider else ''
+            ]
+            
+            writer.writerow(row)
+            logger.debug(f"CSV记录已保存: {len(row)}个字段，思考过程长度: {len(reasoning_str)}")
+            
+    except Exception as e:
+        # CSV记录失败不影响答题流程，只记录日志
+        logger.warning(f"保存CSV记录失败: {str(e)}", exc_info=True)
 
 
 @app.route('/api/answer', methods=['POST'])
@@ -1290,9 +1344,15 @@ def answer_question():
         q_type = QUESTION_TYPES.get(type_num, "single")
         q_type_name = {"single": "单选题", "multiple": "多选题", "judgement": "判断题", "completion": "填空题"}.get(q_type, "未知题型")
         
-        if isinstance(options, list):
+        # 处理选项：支持多种格式
+        if isinstance(options, str):
+            # 如果是字符串，按换行符分割（OCS脚本传递的格式）
+            options = [opt.strip() for opt in options.split('\n') if opt.strip()]
+        elif isinstance(options, list):
+            # 如果是列表，清理每个选项
             options = [str(opt).strip() for opt in options if opt]
         else:
+            # 其他格式转为空列表
             options = []
         
         # 提取题目中的图片URL
@@ -1583,39 +1643,7 @@ def answer_question():
         return jsonify({"success": False, "error": f"服务器错误: {str(e)}"}), 500
 
 
-@app.route('/', methods=['HEAD', 'GET'])
-def latency_test():
-    """
-    OCS脚本延迟测试接口
-    支持HEAD和GET请求，用于测试题库连接延迟
-    """
-    # 获取时间戳参数（如果存在）
-    timestamp = request.args.get('t', None)
-    
-    # 创建响应
-    response = make_response('', 200)
-    
-    # 设置响应头
-    response.headers['Content-Type'] = 'text/plain; charset=utf-8'
-    response.headers['X-Service'] = 'OCS AI Answerer'
-    response.headers['X-Version'] = '2.0.0'
-    
-    # 如果提供了时间戳，计算延迟（可选，用于调试）
-    if timestamp:
-        try:
-            client_timestamp = int(timestamp) / 1000  # 转换为秒
-            server_timestamp = time.time()
-            latency = (server_timestamp - client_timestamp) * 1000  # 毫秒
-            response.headers['X-Latency'] = f"{latency:.2f}ms"
-        except (ValueError, TypeError):
-            pass
-    
-    # GET请求返回简单文本
-    if request.method == 'GET':
-        response.set_data('OK')
-    
-    return response
-
+# ==================== API 路由 ====================
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
@@ -1623,7 +1651,7 @@ def health_check():
     return jsonify({
         "status": "ok" if model_client else "error",
         "service": "OCS AI Answerer (Multi-Model)",
-        "version": "2.0.0",
+        "version": "2.2.0",
         "provider": MODEL_PROVIDER,
         "model": model_client.model if model_client else "未配置",
         "reasoning_enabled": ENABLE_REASONING,
@@ -1636,58 +1664,425 @@ def health_check():
 
 
 @app.route('/api/config', methods=['GET'])
+@require_auth
 def get_config():
-    """获取当前配置"""
+    """获取当前配置（需要认证）- 返回完整密钥"""
+    # 返回所有环境变量配置（用于配置面板）
     config = {
-        "provider": MODEL_PROVIDER,
-        "model": model_client.model if model_client else None,
-        "reasoning_enabled": ENABLE_REASONING,
-        "auto_reasoning_for_multiple": AUTO_REASONING_FOR_MULTIPLE,
-        "auto_reasoning_for_images": AUTO_REASONING_FOR_IMAGES,
-        "reasoning_effort": REASONING_EFFORT if ENABLE_REASONING else None,
-        "temperature": TEMPERATURE,
-        "max_tokens": MAX_TOKENS
+        # 模型提供商配置
+        "MODEL_PROVIDER": MODEL_PROVIDER,
+        "AUTO_MODEL_SELECTION": str(model_client.is_auto_mode if model_client else False).lower(),
+        "PREFER_MODEL": getattr(model_client, 'prefer_model', '') if model_client else '',
+        "IMAGE_MODEL": getattr(model_client, 'image_model', '') if model_client else '',
+        
+        # DeepSeek 配置 - 返回完整密钥
+        "DEEPSEEK_API_KEY": DEEPSEEK_API_KEY,
+        "DEEPSEEK_BASE_URL": os.getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com'),
+        "DEEPSEEK_MODEL": os.getenv('DEEPSEEK_MODEL', 'deepseek-chat'),
+        
+        # 豆包配置 - 返回完整密钥
+        "DOUBAO_API_KEY": DOUBAO_API_KEY,
+        "DOUBAO_BASE_URL": os.getenv('DOUBAO_BASE_URL', 'https://ark.cn-beijing.volces.com/api/v3'),
+        "DOUBAO_MODEL": os.getenv('DOUBAO_MODEL', ''),
+        
+        # 思考模式配置
+        "ENABLE_REASONING": str(ENABLE_REASONING).lower(),
+        "REASONING_EFFORT": REASONING_EFFORT,
+        "AUTO_REASONING_FOR_MULTIPLE": str(AUTO_REASONING_FOR_MULTIPLE).lower(),
+        "AUTO_REASONING_FOR_IMAGES": str(AUTO_REASONING_FOR_IMAGES).lower(),
+        
+        # AI 参数配置
+        "TEMPERATURE": str(TEMPERATURE),
+        "MAX_TOKENS": str(MAX_TOKENS),
+        "REASONING_MAX_TOKENS": str(os.getenv('REASONING_MAX_TOKENS', '4096')),
+        "TOP_P": str(os.getenv('TOP_P', '1.0')),
+        
+        # 网络配置
+        "HTTP_PROXY": os.getenv('HTTP_PROXY', ''),
+        "HTTPS_PROXY": os.getenv('HTTPS_PROXY', ''),
+        "TIMEOUT": str(os.getenv('TIMEOUT', '1200')),
+        "MAX_RETRIES": str(os.getenv('MAX_RETRIES', '3')),
+        
+        # 系统配置
+        "HOST": HOST,
+        "PORT": str(PORT),
+        "DEBUG": str(os.getenv('DEBUG', 'false')).lower(),
+        "CSV_LOG_FILE": os.getenv('CSV_LOG_FILE', 'ocs_answers_log.csv'),
+        "LOG_LEVEL": os.getenv('LOG_LEVEL', 'INFO'),
     }
     
-    # 如果是智能模式，返回更多信息
-    if model_client and model_client.is_auto_mode:
-        config.update({
-            "auto_mode": True,
-            "available_models": list(model_client.clients.keys()),
-            "prefer_model": model_client.prefer_model,
-            "image_model": model_client.image_model,
-            "deepseek_configured": "deepseek" in model_client.clients,
-            "doubao_configured": "doubao" in model_client.clients
-        })
-    else:
-        config["auto_mode"] = False
+    # 添加运行时信息（用于状态显示）
+    config["_runtime"] = {
+        "model": model_client.model if model_client else None,
+        "auto_mode": model_client.is_auto_mode if model_client else False,
+        "available_models": list(model_client.clients.keys()) if model_client and model_client.is_auto_mode else [],
+        "deepseek_configured": "deepseek" in model_client.clients if model_client and model_client.is_auto_mode else bool(DEEPSEEK_API_KEY),
+        "doubao_configured": "doubao" in model_client.clients if model_client and model_client.is_auto_mode else bool(DOUBAO_API_KEY)
+    }
     
     return jsonify(config)
 
 
-@app.route('/api/csv', methods=['GET'])
-def get_csv():
-    """获取CSV日志文件"""
+@app.route('/api/config', methods=['POST'])
+@require_auth
+def save_config():
+    """保存配置到 .env 文件（需要认证）- 匹配修改而非覆盖"""
+    try:
+        config_data = request.get_json()
+        if not config_data:
+            return jsonify({"error": "无效的配置数据"}), 400
+        
+        # .env 文件路径
+        env_file = os.path.join(os.path.dirname(__file__), '.env')
+        
+        # 读取现有的 .env 文件内容（逐行）
+        lines = []
+        if os.path.exists(env_file):
+            with open(env_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+        
+        # 创建配置键到新值的映射
+        updated_keys = set()
+        
+        # 逐行处理，匹配并修改
+        new_lines = []
+        for line in lines:
+            stripped = line.strip()
+            
+            # 保留注释和空行
+            if not stripped or stripped.startswith('#'):
+                new_lines.append(line)
+                continue
+            
+            # 解析配置行
+            if '=' in stripped:
+                key = stripped.split('=', 1)[0].strip()
+                
+                # 如果这个key在更新数据中，替换它
+                if key in config_data:
+                    value = config_data[key]
+                    # 处理空值
+                    if value == '' or value is None:
+                        new_lines.append(f"{key}=\n")
+                    else:
+                        new_lines.append(f"{key}={value}\n")
+                    updated_keys.add(key)
+                else:
+                    # 保留原有配置
+                    new_lines.append(line)
+            else:
+                # 保留格式不正确的行
+                new_lines.append(line)
+        
+        # 添加新的配置项（如果有）
+        new_keys = set(config_data.keys()) - updated_keys
+        if new_keys:
+            new_lines.append("\n# 新增配置项\n")
+            for key in sorted(new_keys):
+                value = config_data[key]
+                if value == '' or value is None:
+                    new_lines.append(f"{key}=\n")
+                else:
+                    new_lines.append(f"{key}={value}\n")
+        
+        # 写入文件
+        with open(env_file, 'w', encoding='utf-8') as f:
+            f.writelines(new_lines)
+        
+        logger.info(f"配置已保存到 {env_file}，更新了 {len(updated_keys)} 个配置项，新增了 {len(new_keys)} 个配置项")
+        return jsonify({
+            "success": True,
+            "message": "配置已成功保存到 .env 文件",
+            "file": env_file,
+            "updated": len(updated_keys),
+            "added": len(new_keys),
+            "note": "请重启服务以应用新配置"
+        })
+        
+    except Exception as e:
+        logger.error(f"保存配置失败: {str(e)}")
+        return jsonify({"error": f"保存配置失败: {str(e)}"}), 500
+
+
+@app.route('/api/restart', methods=['POST'])
+@require_auth
+def restart_server():
+    """重启服务器（需要认证）"""
+    try:
+        import sys
+        import os
+        import threading
+        import subprocess
+        
+        def do_restart():
+            """延迟重启以便响应返回"""
+            import time
+            time.sleep(1)  # 等待响应返回
+            logger.info("正在重启服务器...")
+            
+            # 检测是否为 PyInstaller 打包环境
+            if getattr(sys, 'frozen', False):
+                # 打包后的 exe 环境
+                executable = sys.executable  # exe 文件路径
+                logger.info(f"检测到打包环境，重启 exe: {executable}")
+                
+                # 直接启动新的 exe 进程
+                if os.name == 'nt':  # Windows
+                    subprocess.Popen([executable], 
+                                   creationflags=subprocess.CREATE_NEW_CONSOLE)
+                else:  # Linux/Mac
+                    subprocess.Popen([executable])
+                
+                # 退出当前进程
+                os._exit(0)
+            else:
+                # 普通 Python 脚本环境
+                python = sys.executable
+                script = os.path.abspath(__file__)
+                logger.info(f"检测到脚本环境，重启: {python} {script}")
+                
+                if os.name == 'nt':  # Windows
+                    subprocess.Popen([python, script], 
+                                   creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    os._exit(0)
+                else:  # Linux/Mac
+                    os.execv(python, [python, script])
+        
+        # 在后台线程中执行重启
+        threading.Thread(target=do_restart, daemon=True).start()
+        
+        return jsonify({
+            "success": True,
+            "message": "服务器将在 1 秒后重启"
+        })
+        
+    except Exception as e:
+        logger.error(f"重启服务器失败: {str(e)}")
+        return jsonify({"error": f"重启失败: {str(e)}"}), 500
+
+
+@app.route('/api/csv/stats', methods=['GET'])
+def get_csv_stats():
+    """获取CSV统计数据（支持筛选）"""
     csv_file = os.getenv('CSV_LOG_FILE', 'ocs_answers_log.csv')
     
+    # 获取筛选参数
+    search = request.args.get('search', '')
+    question_type = request.args.get('type', '')
+    reasoning = request.args.get('reasoning', '')
+    date_filter = request.args.get('date', 'all')
+    custom_date = request.args.get('custom_date', '')
+    
     try:
-        if os.path.exists(csv_file):
-            with open(csv_file, 'r', encoding='utf-8-sig') as f:
-                content = f.read()
-            response = make_response(content)
-            response.headers['Content-Type'] = 'text/csv; charset=utf-8'
-            # 不设置Content-Disposition，允许浏览器直接读取内容
-            return response
-        else:
+        if not os.path.exists(csv_file):
             return jsonify({"error": "CSV文件不存在"}), 404
+        
+        # 读取并解析CSV
+        import csv as csv_module
+        stats = {
+            'total': 0,
+            'avgTime': 0,
+            'reasoningCount': 0,
+            'totalTime': 0,
+            'totalCost': 0,
+            'totalTokens': 0,
+            'inputTokens': 0,
+            'outputTokens': 0,
+            'typeCounts': {},
+            'timeRanges': {'0-2秒': 0, '2-5秒': 0, '5-10秒': 0, '10秒以上': 0},
+            'reasoningCounts': {'思考模式': 0, '普通模式': 0},
+            'dailyCounts': {}
+        }
+        
+        with open(csv_file, 'r', encoding='utf-8-sig') as f:
+            reader = csv_module.DictReader(f)
+            total_ai_time = 0
+            
+            for row in reader:
+                # 应用筛选
+                row_text = '|'.join(row.values()).lower()
+                if search and search.lower() not in row_text:
+                    continue
+                if question_type and row.get('题型', '') != question_type:
+                    continue
+                if reasoning and row.get('思考模式', '') != reasoning:
+                    continue
+                # TODO: 日期筛选
+                
+                # 统计
+                stats['total'] += 1
+                
+                # AI耗时
+                ai_time = float(row.get('AI耗时(秒)', 0) or 0)
+                total_ai_time += ai_time
+                
+                # 总耗时
+                stats['totalTime'] += float(row.get('总耗时(秒)', 0) or 0)
+                
+                # 费用
+                stats['totalCost'] += float(row.get('费用(元)', 0) or 0)
+                
+                # Token统计
+                stats['totalTokens'] += int(row.get('总Token', 0) or 0)
+                stats['inputTokens'] += int(row.get('输入Token', 0) or 0)
+                stats['outputTokens'] += int(row.get('输出Token', 0) or 0)
+                
+                # 思考模式
+                if row.get('思考模式', '') == '是':
+                    stats['reasoningCount'] += 1
+                    stats['reasoningCounts']['思考模式'] += 1
+                else:
+                    stats['reasoningCounts']['普通模式'] += 1
+                
+                # 题型分布
+                q_type = row.get('题型', '未知')
+                stats['typeCounts'][q_type] = stats['typeCounts'].get(q_type, 0) + 1
+                
+                # 耗时分布
+                if ai_time <= 2:
+                    stats['timeRanges']['0-2秒'] += 1
+                elif ai_time <= 5:
+                    stats['timeRanges']['2-5秒'] += 1
+                elif ai_time <= 10:
+                    stats['timeRanges']['5-10秒'] += 1
+                else:
+                    stats['timeRanges']['10秒以上'] += 1
+                
+                # 每日答题量
+                timestamp = row.get('时间戳', '')
+                if timestamp:
+                    date = timestamp.split(' ')[0]
+                    stats['dailyCounts'][date] = stats['dailyCounts'].get(date, 0) + 1
+        
+        # 计算平均值
+        if stats['total'] > 0:
+            stats['avgTime'] = total_ai_time / stats['total']
+            stats['totalTime'] = stats['totalTime'] / 60  # 转换为分钟
+        
+        return jsonify(stats)
+        
+    except Exception as e:
+        logger.error(f"获取统计数据失败: {str(e)}")
+        return jsonify({"error": f"获取统计数据失败: {str(e)}"}), 500
+
+
+@app.route('/api/csv', methods=['GET'])
+def get_csv():
+    """获取CSV日志文件（返回JSON格式，支持分页和筛选，时间倒序）"""
+    csv_file = os.getenv('CSV_LOG_FILE', 'ocs_answers_log.csv')
+    
+    # 获取分页参数
+    page = request.args.get('page', type=int)
+    page_size = request.args.get('page_size', type=int)
+    export_all = request.args.get('export', '') == 'true'  # 是否导出全部数据
+    
+    # 获取筛选参数
+    search = request.args.get('search', '')
+    question_type = request.args.get('type', '')
+    reasoning = request.args.get('reasoning', '')
+    date_filter = request.args.get('date', 'all')
+    custom_date = request.args.get('custom_date', '')
+    
+    try:
+        if not os.path.exists(csv_file):
+            return jsonify({"error": "CSV文件不存在"}), 404
+        
+        # 使用DictReader解析CSV为字典列表
+        all_data = []
+        with open(csv_file, 'r', encoding='utf-8-sig') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                # 应用筛选
+                if search and search.lower() not in str(row).lower():
+                    continue
+                if question_type and row.get('题型', '') != question_type:
+                    continue
+                if reasoning:
+                    if reasoning == '思考模式':
+                        if row.get('思考模式', '否') == '否':
+                            continue
+                    elif reasoning == '普通模式':
+                        if row.get('思考模式', '否') != '否':
+                            continue
+                
+                # 日期筛选
+                if date_filter != 'all':
+                    timestamp = row.get('时间戳', '')
+                    if timestamp:
+                        try:
+                            from datetime import datetime, timedelta
+                            record_date = datetime.strptime(timestamp.split()[0], '%Y-%m-%d')
+                            today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                            
+                            if date_filter == 'today':
+                                if record_date.date() != today.date():
+                                    continue
+                            elif date_filter == 'week':
+                                week_ago = today - timedelta(days=7)
+                                if record_date < week_ago:
+                                    continue
+                            elif date_filter == 'month':
+                                month_ago = today - timedelta(days=30)
+                                if record_date < month_ago:
+                                    continue
+                            elif date_filter == 'custom' and custom_date:
+                                date_range = custom_date.split(',')
+                                if len(date_range) == 2:
+                                    start_date = datetime.strptime(date_range[0], '%Y-%m-%d')
+                                    end_date = datetime.strptime(date_range[1], '%Y-%m-%d')
+                                    if not (start_date <= record_date <= end_date):
+                                        continue
+                        except:
+                            pass
+                
+                all_data.append(row)
+        
+        # 按时间戳倒序排序（最新的在前面）
+        all_data.sort(key=lambda x: x.get('时间戳', ''), reverse=True)
+        
+        total = len(all_data)
+        
+        # 如果是导出全部数据
+        if export_all:
+            return jsonify({
+                "data": all_data,
+                "total": total
+            })
+        
+        # 如果没有分页参数，返回全部数据
+        if page is None or page_size is None:
+            return jsonify({
+                "data": all_data,
+                "total": total
+            })
+        
+        # 分页处理
+        total_pages = (total + page_size - 1) // page_size if total > 0 else 0
+        start = (page - 1) * page_size
+        end = min(start + page_size, total)
+        
+        if start >= total or start < 0:
+            paginated_data = []
+        else:
+            paginated_data = all_data[start:end]
+        
+        return jsonify({
+            "data": paginated_data,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages
+        })
+        
     except Exception as e:
         logger.error(f"读取CSV文件失败: {str(e)}")
         return jsonify({"error": f"读取CSV文件失败: {str(e)}"}), 500
 
 
 @app.route('/api/csv/clear', methods=['POST'])
+@require_auth
 def clear_csv():
-    """清空CSV日志文件（保留表头）"""
+    """清空CSV日志文件（保留表头，需要认证）"""
     csv_file = os.getenv('CSV_LOG_FILE', 'ocs_answers_log.csv')
     
     try:
@@ -1714,10 +2109,155 @@ def clear_csv():
         return jsonify({"success": False, "error": f"清空CSV文件失败: {str(e)}"}), 500
 
 
-@app.route('/viewer', methods=['GET'])
-@app.route('/viewer/', methods=['GET'])
-def viewer():
-    """答题记录可视化页面"""
+# ==================== 安全认证API ====================
+
+@app.route('/api/auth/verify', methods=['POST'])
+def verify_auth():
+    """验证API密钥是否有效"""
+    try:
+        data = request.get_json()
+        api_key = data.get('api_key', '')
+        
+        if not api_key:
+            return jsonify({"valid": False, "error": "缺少API密钥"}), 400
+        
+        # 验证密钥
+        is_valid = security_manager.verify_key(api_key)
+        
+        if is_valid:
+            return jsonify({"valid": True})
+        else:
+            return jsonify({"valid": False, "error": "密钥无效"}), 403
+    except Exception as e:
+        logger.error(f"验证密钥失败: {str(e)}")
+        return jsonify({"valid": False, "error": str(e)}), 500
+
+
+@app.route('/api/auth/update-key', methods=['POST'])
+@require_auth
+def update_secret_key():
+    """更新访问密钥（需要旧密钥认证）"""
+    try:
+        data = request.get_json()
+        old_key = data.get('old_key', '')
+        new_key = data.get('new_key', '')
+        
+        if not old_key or not new_key:
+            return jsonify({"success": False, "error": "缺少必要参数"}), 400
+        
+        # 更新密钥
+        success, message = security_manager.update_key(old_key, new_key)
+        
+        if success:
+            return jsonify({"success": True, "message": message})
+        else:
+            return jsonify({"success": False, "error": message}), 400
+    except Exception as e:
+        logger.error(f"更新密钥失败: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/auth/status', methods=['GET'])
+def auth_status():
+    """获取认证状态（不需要密钥，用于检查是否启用了认证）"""
+    return jsonify({
+        "auth_enabled": True,
+        "message": "此服务需要API密钥才能访问敏感接口"
+    })
+
+
+# ==================== Vue SPA 静态文件服务 ====================
+
+@app.route('/assets/<path:filename>')
+def serve_assets(filename):
+    """提供Vue打包后的静态资源"""
+    dist_dir = os.path.join(os.path.dirname(__file__), 'dist', 'assets')
+    return send_from_directory(dist_dir, filename)
+
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_spa(path):
+    """
+    服务 Vue SPA 应用
+    - 如果请求的是 API 路径，跳过（由其他路由处理）
+    - 如果请求有时间戳参数 (?t=...)，作为延迟测试
+    - 否则返回 Vue 应用的 index.html
+    """
+    # API 路径已经被上面的路由处理，这里不应该被触发
+    if path.startswith('api/'):
+        return jsonify({"error": "API endpoint not found"}), 404
+    
+    # 延迟测试（向后兼容旧的 OCS 脚本）
+    timestamp = request.args.get('t', None)
+    if timestamp and request.method in ['HEAD', 'GET']:
+        response = make_response('', 200)
+        response.headers['Content-Type'] = 'text/plain; charset=utf-8'
+        response.headers['X-Service'] = 'OCS AI Answerer'
+        response.headers['X-Version'] = '3.0.0'
+        
+        try:
+            client_timestamp = int(timestamp) / 1000
+            server_timestamp = time.time()
+            latency = (server_timestamp - client_timestamp) * 1000
+            response.headers['X-Latency'] = f"{latency:.2f}ms"
+        except (ValueError, TypeError):
+            pass
+        
+        if request.method == 'GET':
+            response.set_data('OK')
+        
+        return response
+    
+    # 服务 Vue SPA
+    dist_dir = os.path.join(os.path.dirname(__file__), 'dist')
+    index_file = os.path.join(dist_dir, 'index.html')
+    
+    # 如果 dist 目录不存在，提示需要构建前端
+    if not os.path.exists(dist_dir) or not os.path.exists(index_file):
+        return jsonify({
+            "error": "前端应用未构建",
+            "message": "请先构建前端应用：cd frontend && npm install && npm run build",
+            "note": "或者使用旧版HTML界面，访问 /config_legacy"
+        }), 503
+    
+    # 返回 Vue 应用的 index.html
+    try:
+        with open(index_file, 'r', encoding='utf-8') as f:
+            html_content = f.read()
+        response = make_response(html_content)
+        response.headers['Content-Type'] = 'text/html; charset=utf-8'
+        return response
+    except Exception as e:
+        logger.error(f"加载Vue应用失败: {str(e)}")
+        return jsonify({"error": f"加载前端应用失败: {str(e)}"}), 500
+
+
+# ==================== 旧版HTML页面路由(向后兼容) ====================
+
+@app.route('/config_legacy', methods=['GET'])
+def config_panel_legacy():
+    """配置管理面板 (旧版HTML)"""
+    html_file = os.path.join(os.path.dirname(__file__), 'config_panel.html')
+    
+    try:
+        if os.path.exists(html_file):
+            with open(html_file, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+            
+            response = make_response(html_content)
+            response.headers['Content-Type'] = 'text/html; charset=utf-8'
+            return response
+        else:
+            return jsonify({"error": "配置面板文件不存在"}), 404
+    except Exception as e:
+        logger.error(f"加载配置面板失败: {str(e)}")
+        return jsonify({"error": f"加载配置面板失败: {str(e)}"}), 500
+
+
+@app.route('/viewer_legacy', methods=['GET'])
+def viewer_legacy():
+    """答题记录可视化页面 (旧版HTML)"""
     html_file = os.path.join(os.path.dirname(__file__), 'ocs_answers_viewer.html')
     
     try:
@@ -1730,12 +2270,10 @@ def viewer():
                 "fetch('ocs_answers_log.csv')",
                 "fetch('/api/csv')"
             )
-            # 确保所有可能的CSV路径都被替换
             html_content = html_content.replace(
                 'fetch("ocs_answers_log.csv")',
                 'fetch("/api/csv")'
             )
-            # 如果Chart.js不存在，使用CDN
             html_content = html_content.replace(
                 '<script src="chart.js.min.js"></script>',
                 '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>'
@@ -1749,6 +2287,26 @@ def viewer():
     except Exception as e:
         logger.error(f"加载可视化页面失败: {str(e)}")
         return jsonify({"error": f"加载可视化页面失败: {str(e)}"}), 500
+
+
+@app.route('/docs_legacy', methods=['GET'])
+def api_docs_legacy():
+    """API文档页面 (旧版HTML)"""
+    html_file = os.path.join(os.path.dirname(__file__), 'api_docs.html')
+    
+    try:
+        if os.path.exists(html_file):
+            with open(html_file, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+            
+            response = make_response(html_content)
+            response.headers['Content-Type'] = 'text/html; charset=utf-8'
+            return response
+        else:
+            return jsonify({"error": "API文档文件不存在"}), 404
+    except Exception as e:
+        logger.error(f"加载API文档失败: {str(e)}")
+        return jsonify({"error": f"加载API文档失败: {str(e)}"}), 500
 
 
 if __name__ == '__main__':
@@ -1766,13 +2324,16 @@ if __name__ == '__main__':
     
     print(f"""
     ╔═══════════════════════════════════════════════════════════╗
-    ║       OCS智能答题API服务 - 多模型支持版本 v2.1          ║
+    ║       OCS智能答题API服务 - 多模型支持版本 v2.2          ║
+    ╠═══════════════════════════════════════════════════════════╣
+    ║  � Vue3 前端: http://{HOST}:{PORT}/                    
+    ║  📊 数据可视化: http://{HOST}:{PORT}/viewer             
+    ║  📖 API文档: http://{HOST}:{PORT}/docs                  
     ╠═══════════════════════════════════════════════════════════╣
     ║  接口地址: http://{HOST}:{PORT}/api/answer              
     ║  健康检查: http://{HOST}:{PORT}/api/health              
     ║  配置查询: http://{HOST}:{PORT}/api/config              
     ║  CSV数据: http://{HOST}:{PORT}/api/csv                  
-    ║  可视化页面: http://{HOST}:{PORT}/viewer                
     ║  延迟测试: http://{HOST}:{PORT}/?t=时间戳 (HEAD/GET)    
     ╠═══════════════════════════════════════════════════════════╣
     ║  当前模式: {model_info:<48s}║
@@ -1781,6 +2342,8 @@ if __name__ == '__main__':
     ║  多选题思考: {'✅ 自动启用' if AUTO_REASONING_FOR_MULTIPLE else '❌ 关闭':<38s}║
     ║  图片题思考: {'✅ 自动启用' if AUTO_REASONING_FOR_IMAGES else '❌ 关闭':<38s}║
     ║  支持题型: 单选、多选、判断、填空                        ║
+    ╠═══════════════════════════════════════════════════════════╣
+    ║  💡 旧版HTML: http://{HOST}:{PORT}/config_legacy         
     ╚═══════════════════════════════════════════════════════════╝
     """)
     
@@ -1818,9 +2381,15 @@ if __name__ == '__main__':
             print(f"   🔧 已配置模型: {', '.join(model_client.clients.keys())}\n")
         else:
             print("✅ 服务启动成功！\n")
-        
-        print("🚀 并发模式已启用，支持同时处理多个请求！\n")
     
-    # 启用多线程支持（支持并发请求）
-    app.run(host=HOST, port=PORT, debug=DEBUG, threaded=True)
+    # 检查前端是否已构建
+    dist_dir = os.path.join(os.path.dirname(__file__), 'dist')
+    if not os.path.exists(dist_dir):
+        print("⚠️  警告: 前端应用未构建")
+        print("   访问 Web 界面需要先构建前端：")
+        print("   执行: build_frontend.bat")
+        print("   或访问旧版界面: http://{}:{}/config_legacy\n".format(HOST, PORT))
+    
+    app.run(host=HOST, port=PORT, debug=DEBUG)
+
 
