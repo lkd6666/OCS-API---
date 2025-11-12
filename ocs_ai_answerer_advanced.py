@@ -2,60 +2,99 @@
 # -*- coding: utf-8 -*-
 """
 OCS脚本智能答题API - 多模型支持版本
-支持：DeepSeek、豆包(Doubao)等多个大语言模型
-支持：思考模式、自定义配置
+
+这是一个功能完整的在线课程系统(OCS)智能答题API服务，提供以下核心功能：
+
+核心特性：
+    - 多模型支持：DeepSeek、豆包(Doubao)等多个大语言模型
+    - 智能模型选择：根据题目类型（文本/图片）自动选择最合适的模型
+    - 思考模式：支持深度推理模式，提高复杂题目的准确率
+    - 安全认证：基于密钥的访问控制和限流保护
+    - 完整的API：答题、配置管理、数据统计、CSV日志等
+    - Web界面：Vue3前端 + 可视化数据分析
+
+支持的题型：
+    - 单选题 (single)
+    - 多选题 (multiple)
+    - 判断题 (judgement)
+    - 填空题 (completion)
+
+技术栈：
+    - Flask: Web框架
+    - OpenAI SDK: 统一的AI模型调用接口
+    - httpx: 高性能HTTP客户端
+    - CSV: 答题记录持久化
+
+作者：开源项目
+版本：v2.2.0
+许可：MIT License
 """
 
-from flask import Flask, request, jsonify, make_response, redirect, send_from_directory
-from flask_cors import CORS
-from openai import OpenAI
+# ==================== 标准库导入 ====================
 import os
-from typing import List, Dict, Any, Optional, Tuple
-import logging
-from dotenv import load_dotenv
 import re
 import time
 import csv
-from datetime import datetime
 import base64
-from io import BytesIO
 import secrets
 import hashlib
 import json
+import logging
+from datetime import datetime
+from io import BytesIO
 from functools import wraps
 from collections import defaultdict
+from typing import List, Dict, Any, Optional, Tuple
+
+# ==================== 第三方库导入 ====================
+from flask import Flask, request, jsonify, make_response, redirect, send_from_directory
+from flask_cors import CORS
+from openai import OpenAI
+from dotenv import load_dotenv
 
 # 加载环境变量
 load_dotenv()
 
 # ==================== 配置区域 ====================
+# 所有配置项都从环境变量读取，支持通过.env文件或系统环境变量设置
+# 配置优先级：系统环境变量 > .env文件 > 默认值
 
-# 模型配置
+# -------------------- 模型配置 --------------------
 MODEL_PROVIDER = os.getenv('MODEL_PROVIDER', 'deepseek')  # deepseek, doubao 或 auto（智能选择）
 MODEL_NAME = os.getenv('MODEL_NAME', 'deepseek-chat')     # 模型名称
 
-# 智能模型选择配置
+# -------------------- 智能模型选择配置 --------------------
+# AUTO模式下根据题目内容自动选择最合适的模型
+# - 图片题目：使用IMAGE_MODEL指定的模型（通常是豆包，支持多模态）
+# - 文本题目：使用PREFER_MODEL指定的模型（通常是DeepSeek，成本更低）
 AUTO_MODEL_SELECTION = os.getenv('AUTO_MODEL_SELECTION', 'true').lower() == 'true'  # 是否启用智能选择
 PREFER_MODEL = os.getenv('PREFER_MODEL', 'deepseek')  # 纯文本题目首选模型
 IMAGE_MODEL = os.getenv('IMAGE_MODEL', 'doubao')       # 图片题目使用的模型
 
-# DeepSeek配置
+# -------------------- DeepSeek配置 --------------------
+# DeepSeek是一个高性价比的大语言模型
+# 支持deepseek-chat（普通模式）和deepseek-reasoner（思考模式）
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', '')
 DEEPSEEK_BASE_URL = os.getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com')
 DEEPSEEK_MODEL = os.getenv('DEEPSEEK_MODEL', 'deepseek-chat')  # deepseek-chat 或 deepseek-reasoner
 
-# 豆包配置
+# -------------------- 豆包(Doubao)配置 --------------------
+# 豆包是字节跳动的多模态大模型，支持图片输入
+# 需要在火山引擎控制台创建推理接入点获取endpoint ID
 DOUBAO_API_KEY = os.getenv('DOUBAO_API_KEY', '')
 DOUBAO_BASE_URL = os.getenv('DOUBAO_BASE_URL', 'https://ark.cn-beijing.volces.com/api/v3')
 DOUBAO_MODEL = os.getenv('DOUBAO_MODEL', 'doubao-seed-1-6-251015')
 
-# 思考模式配置
+# -------------------- 思考模式配置 --------------------
+# 思考模式使用深度推理提高复杂题目的准确率
+# 适合多选题、逻辑推理题等需要仔细分析的场景
 ENABLE_REASONING = os.getenv('ENABLE_REASONING', 'false').lower() == 'true'
 REASONING_EFFORT = os.getenv('REASONING_EFFORT', 'medium')  # low, medium, high
 AUTO_REASONING_FOR_MULTIPLE = os.getenv('AUTO_REASONING_FOR_MULTIPLE', 'true').lower() == 'true'
 AUTO_REASONING_FOR_IMAGES = os.getenv('AUTO_REASONING_FOR_IMAGES', 'true').lower() == 'true'  # 带图片题目自动启用深度思考
 
-# AI参数配置
+# -------------------- AI参数配置 --------------------
+# 控制模型生成的随机性和输出长度
 TEMPERATURE = float(os.getenv('TEMPERATURE', '0.1'))
 
 # max_tokens 限制:
@@ -71,23 +110,55 @@ REASONING_MAX_TOKENS = max(1, min(65536, REASONING_MAX_TOKENS_RAW))  # 限制到
 
 TOP_P = float(os.getenv('TOP_P', '0.95'))
 
-# 网络配置
+# -------------------- 网络配置 --------------------
+# 支持HTTP代理、超时控制和自动重试
 HTTP_PROXY = os.getenv('HTTP_PROXY', '')
 HTTPS_PROXY = os.getenv('HTTPS_PROXY', '')
-TIMEOUT = float(os.getenv('TIMEOUT', '1200.0'))
-MAX_RETRIES = int(os.getenv('MAX_RETRIES', '3'))
+TIMEOUT = float(os.getenv('TIMEOUT', '1200.0'))  # 请求超时时间（秒）
+MAX_RETRIES = int(os.getenv('MAX_RETRIES', '3'))  # 最大重试次数
 
-# 服务配置
+# -------------------- 服务配置 --------------------
+# Flask服务器的监听地址和端口
 HOST = os.getenv('HOST', '0.0.0.0')
 PORT = int(os.getenv('PORT', 5000))
 DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
-# 安全配置
+# -------------------- 安全配置 --------------------
+# 访问控制和限流配置，防止未授权访问和滥用
 SECRET_KEY_FILE = os.getenv('SECRET_KEY_FILE', '.secret_key')  # 密钥文件路径
 RATE_LIMIT_ATTEMPTS = int(os.getenv('RATE_LIMIT_ATTEMPTS', '5'))  # 允许的连续错误次数
 RATE_LIMIT_WINDOW = int(os.getenv('RATE_LIMIT_WINDOW', '300'))  # 限流时间窗口（秒）
 
 # ==================== 配置区域结束 ====================
+
+# ==================== 常量定义 ====================
+# HTTP状态码
+HTTP_OK = 200
+HTTP_BAD_REQUEST = 400
+HTTP_UNAUTHORIZED = 401
+HTTP_FORBIDDEN = 403
+HTTP_NOT_FOUND = 404
+HTTP_TOO_MANY_REQUESTS = 429
+HTTP_SERVER_ERROR = 500
+HTTP_SERVICE_UNAVAILABLE = 503
+
+# CSV文件列名（用于确保一致性）
+CSV_HEADERS = [
+    '时间戳', '题型', '题目', '选项', '原始回答', '思考过程', 
+    '处理后答案', 'AI耗时(秒)', '总耗时(秒)', '模型', '思考模式',
+    '输入Token', '输出Token', '总Token', '费用(元)', '提供商'
+]
+
+# 题型映射常量
+QUESTION_TYPE_SINGLE = 'single'
+QUESTION_TYPE_MULTIPLE = 'multiple'
+QUESTION_TYPE_COMPLETION = 'completion'
+QUESTION_TYPE_JUDGEMENT = 'judgement'
+
+# 模型提供商常量
+PROVIDER_DEEPSEEK = 'deepseek'
+PROVIDER_DOUBAO = 'doubao'
+PROVIDER_AUTO = 'auto'
 
 # 配置日志（必须在SecurityManager之前初始化）
 logging.basicConfig(
@@ -96,10 +167,442 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ==================== 自定义模型管理 ====================
+
+class CustomModelManager:
+    """
+    自定义模型管理器：管理用户自定义的AI模型配置
+    
+    功能：
+        1. 模型CRUD：添加、删除、更新、查询自定义模型
+        2. 多模态支持：标记模型是否支持图片输入
+        3. Token配置：每个模型可单独配置token参数
+        4. 题型映射：为不同题型指定使用的模型
+        5. 持久化存储：配置保存到JSON文件
+    
+    数据结构：
+        models = {
+            'model_id': {
+                'name': '模型显示名称',
+                'provider': '提供商类型（openai/custom）',
+                'api_key': 'API密钥',
+                'base_url': '基础URL',
+                'model_name': '实际模型名称',
+                'is_multimodal': True/False,
+                'max_tokens': 整数,
+                'temperature': 浮点数,
+                'top_p': 浮点数,
+                'supports_reasoning': True/False,
+                'enabled': True/False,
+                'created_at': '创建时间',
+                'updated_at': '更新时间'
+            }
+        }
+        
+        question_type_models = {
+            'single': {
+                'models': ['model_id1', 'model_id2'],
+                'enable_reasoning': False
+            },
+            'multiple': {
+                'models': ['model_id1'],
+                'enable_reasoning': True
+            },
+            'judgement': {
+                'models': ['model_id1'],
+                'enable_reasoning': False
+            },
+            'completion': {
+                'models': ['model_id1'],
+                'enable_reasoning': False
+            },
+            'image': {
+                'models': ['model_id2'],
+                'enable_reasoning': False
+            }
+        }
+    """
+    
+    def __init__(self, config_file: str = 'custom_models.json'):
+        """初始化自定义模型管理器"""
+        self.config_file = config_file
+        self.models = {}
+        self.question_type_models = {
+            'single': {'models': [], 'enable_reasoning': False},
+            'multiple': {'models': [], 'enable_reasoning': True},
+            'judgement': {'models': [], 'enable_reasoning': False},
+            'completion': {'models': [], 'enable_reasoning': False},
+            'image': {'models': [], 'enable_reasoning': False}
+        }
+        self._load_config()
+    
+    def _load_config(self):
+        """从文件加载配置"""
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.models = data.get('models', {})
+                    self.question_type_models = data.get('question_type_models', self.question_type_models)
+                logger.info(f"✅ 已加载 {len(self.models)} 个自定义模型")
+            except Exception as e:
+                logger.error(f"❌ 加载自定义模型配置失败: {e}")
+        else:
+            logger.info("📝 未找到自定义模型配置文件，将使用空配置")
+    
+    def _save_config(self):
+        """保存配置到文件"""
+        try:
+            data = {
+                'models': self.models,
+                'question_type_models': self.question_type_models,
+                'version': '1.0',
+                'updated_at': datetime.now().isoformat()
+            }
+            with open(self.config_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            logger.info(f"✅ 自定义模型配置已保存")
+            return True
+        except Exception as e:
+            logger.error(f"❌ 保存自定义模型配置失败: {e}")
+            return False
+    
+    def add_model(self, model_id: str, model_config: Dict[str, Any]) -> Tuple[bool, str]:
+        """
+        添加自定义模型
+        
+        Args:
+            model_id: 模型唯一标识
+            model_config: 模型配置字典
+        
+        Returns:
+            (是否成功, 消息)
+        """
+        # 验证必需字段
+        required_fields = ['name', 'provider', 'api_key', 'base_url', 'model_name']
+        for field in required_fields:
+            if field not in model_config:
+                return False, f"缺少必需字段: {field}"
+        
+        # 检查是否已存在
+        if model_id in self.models:
+            return False, f"模型ID已存在: {model_id}"
+        
+        # 添加默认值
+        model_config.setdefault('is_multimodal', False)
+        model_config.setdefault('max_tokens', 2000)
+        model_config.setdefault('temperature', 0.1)
+        model_config.setdefault('top_p', 0.95)
+        model_config.setdefault('supports_reasoning', False)
+        model_config.setdefault('reasoning_param_name', 'reasoning_effort')  # 思考参数名称
+        model_config.setdefault('reasoning_param_value', 'medium')  # 思考参数值
+        model_config.setdefault('enabled', True)
+        model_config.setdefault('is_system', False)  # 标记是否为系统模型
+        model_config['created_at'] = datetime.now().isoformat()
+        model_config['updated_at'] = datetime.now().isoformat()
+        
+        # 保存模型
+        self.models[model_id] = model_config
+        
+        if self._save_config():
+            logger.info(f"✅ 已添加自定义模型: {model_id} - {model_config['name']}")
+            return True, "模型添加成功"
+        else:
+            # 回滚
+            del self.models[model_id]
+            return False, "保存配置失败"
+    
+    def update_model(self, model_id: str, model_config: Dict[str, Any]) -> Tuple[bool, str]:
+        """更新模型配置"""
+        if model_id not in self.models:
+            return False, f"模型不存在: {model_id}"
+        
+        # 检查是否为系统模型
+        if self.models[model_id].get('is_system', False):
+            return False, "系统模型不可编辑，请在.env文件中修改配置"
+        
+        # 更新配置
+        model_config['updated_at'] = datetime.now().isoformat()
+        # 保留创建时间和系统标记
+        model_config['created_at'] = self.models[model_id].get('created_at', datetime.now().isoformat())
+        model_config['is_system'] = self.models[model_id].get('is_system', False)
+        
+        self.models[model_id].update(model_config)
+        
+        if self._save_config():
+            logger.info(f"✅ 已更新模型: {model_id}")
+            return True, "模型更新成功"
+        else:
+            return False, "保存配置失败"
+    
+    def delete_model(self, model_id: str) -> Tuple[bool, str]:
+        """删除模型"""
+        if model_id not in self.models:
+            return False, f"模型不存在: {model_id}"
+        
+        # 检查是否为系统模型
+        if self.models[model_id].get('is_system', False):
+            return False, "系统模型不可删除，如需禁用请在.env文件中删除对应的API密钥"
+        
+        # 从题型映射中移除
+        for q_type in self.question_type_models:
+            if model_id in self.question_type_models[q_type]:
+                self.question_type_models[q_type].remove(model_id)
+        
+        # 删除模型
+        model_name = self.models[model_id].get('name', model_id)
+        del self.models[model_id]
+        
+        if self._save_config():
+            logger.info(f"✅ 已删除模型: {model_id} - {model_name}")
+            return True, "模型删除成功"
+        else:
+            return False, "保存配置失败"
+    
+    def get_model(self, model_id: str) -> Optional[Dict[str, Any]]:
+        """获取单个模型配置"""
+        return self.models.get(model_id)
+    
+    def get_all_models(self, enabled_only: bool = False) -> Dict[str, Dict[str, Any]]:
+        """获取所有模型配置"""
+        if enabled_only:
+            return {k: v for k, v in self.models.items() if v.get('enabled', True)}
+        return self.models.copy()
+    
+    def set_question_type_models(self, question_type: str, model_ids: List[str], enable_reasoning: bool = None) -> Tuple[bool, str]:
+        """
+        设置题型使用的模型列表和思考模式配置
+        
+        Args:
+            question_type: 题型（single/multiple/judgement/completion/image）
+            model_ids: 模型ID列表（按优先级排序）
+            enable_reasoning: 是否启用思考模式（None表示不修改现有配置）
+        """
+        if question_type not in self.question_type_models:
+            return False, f"无效的题型: {question_type}"
+        
+        # 验证所有模型ID是否存在
+        for model_id in model_ids:
+            if model_id not in self.models:
+                return False, f"模型不存在: {model_id}"
+        
+        # 保持字典结构
+        if isinstance(self.question_type_models[question_type], dict):
+            self.question_type_models[question_type]['models'] = model_ids
+            if enable_reasoning is not None:
+                self.question_type_models[question_type]['enable_reasoning'] = enable_reasoning
+        else:
+            # 兼容旧格式：从列表转换为字典
+            self.question_type_models[question_type] = {
+                'models': model_ids,
+                'enable_reasoning': enable_reasoning if enable_reasoning is not None else False
+            }
+        
+        if self._save_config():
+            logger.info(f"✅ 已设置 {question_type} 题型的模型列表和思考配置")
+            return True, "设置成功"
+        else:
+            return False, "保存配置失败"
+    
+    def get_question_type_models(self, question_type: str) -> List[str]:
+        """获取题型使用的模型列表"""
+        config = self.question_type_models.get(question_type, {})
+        if isinstance(config, dict):
+            return config.get('models', [])
+        # 兼容旧格式
+        return config if isinstance(config, list) else []
+    
+    def get_question_type_reasoning(self, question_type: str) -> bool:
+        """获取题型的思考模式配置"""
+        config = self.question_type_models.get(question_type, {})
+        if isinstance(config, dict):
+            return config.get('enable_reasoning', False)
+        return False
+    
+    def get_best_model_for_question(self, question_type: str, has_images: bool = False) -> Optional[str]:
+        """
+        为题目选择最佳模型
+        
+        Args:
+            question_type: 题型
+            has_images: 是否包含图片
+        
+        Returns:
+            模型ID或None
+        """
+        # 如果有图片，优先使用图片题专用模型
+        if has_images:
+            image_models = self.get_question_type_models('image')
+            for model_id in image_models:
+                model = self.get_model(model_id)
+                if model and model.get('enabled', True) and model.get('is_multimodal', False):
+                    return model_id
+        
+        # 使用题型对应的模型
+        type_models = self.get_question_type_models(question_type)
+        for model_id in type_models:
+            model = self.get_model(model_id)
+            if model and model.get('enabled', True):
+                # 如果有图片，必须是多模态模型
+                if has_images and not model.get('is_multimodal', False):
+                    continue
+                return model_id
+        
+        return None
+
+# 全局自定义模型管理器
+custom_model_manager = CustomModelManager()
+
+def import_system_models():
+    """
+    将.env中配置的系统模型导入到自定义模型管理
+    系统模型不可在界面编辑/删除，需要在.env文件中修改
+    """
+    imported = False
+    
+    # 清理旧版本的系统模型（迁移到新的ID）
+    if 'system_deepseek' in custom_model_manager.models:
+        # 删除旧的单一 DeepSeek 模型
+        old_model = custom_model_manager.models.pop('system_deepseek', None)
+        if old_model:
+            logger.info("🔄 清理旧版本系统模型: system_deepseek")
+            # 从题型映射中移除
+            for q_type in custom_model_manager.question_type_models:
+                if 'system_deepseek' in custom_model_manager.question_type_models[q_type]:
+                    custom_model_manager.question_type_models[q_type].remove('system_deepseek')
+            custom_model_manager._save_config()
+    
+    # 导入DeepSeek模型（同时导入 chat 和 reasoner 两个版本）
+    if DEEPSEEK_API_KEY:
+        # 1. 导入 DeepSeek Chat（标准模型）
+        if 'system_deepseek_chat' not in custom_model_manager.models:
+            deepseek_chat_config = {
+                'name': 'DeepSeek Chat (系统配置)',
+                'provider': 'openai',
+                'api_key': DEEPSEEK_API_KEY,
+                'base_url': DEEPSEEK_BASE_URL,
+                'model_name': 'deepseek-chat',
+                'is_multimodal': False,
+                'max_tokens': MAX_TOKENS,
+                'temperature': TEMPERATURE,
+                'top_p': TOP_P,
+                'supports_reasoning': False,
+                'reasoning_param_name': 'reasoning_effort',
+                'reasoning_param_value': REASONING_EFFORT,
+                'enabled': True,
+                'is_system': True
+            }
+            success, msg = custom_model_manager.add_model('system_deepseek_chat', deepseek_chat_config)
+            if success:
+                logger.info("✅ 已导入系统模型: DeepSeek Chat")
+                imported = True
+        
+        # 2. 导入 DeepSeek Reasoner（思考模型）
+        if 'system_deepseek_reasoner' not in custom_model_manager.models:
+            deepseek_reasoner_config = {
+                'name': 'DeepSeek Reasoner (系统配置)',
+                'provider': 'openai',
+                'api_key': DEEPSEEK_API_KEY,
+                'base_url': DEEPSEEK_BASE_URL,
+                'model_name': 'deepseek-reasoner',
+                'is_multimodal': False,
+                'max_tokens': REASONING_MAX_TOKENS,  # 思考模型需要更大的token
+                'temperature': TEMPERATURE,
+                'top_p': TOP_P,
+                'supports_reasoning': True,  # 支持思考模式
+                'reasoning_param_name': 'reasoning_effort',
+                'reasoning_param_value': REASONING_EFFORT,
+                'enabled': True,
+                'is_system': True
+            }
+            success, msg = custom_model_manager.add_model('system_deepseek_reasoner', deepseek_reasoner_config)
+            if success:
+                logger.info("✅ 已导入系统模型: DeepSeek Reasoner")
+                imported = True
+    
+    # 导入豆包模型
+    if DOUBAO_API_KEY:
+        doubao_config = {
+            'name': '豆包 Doubao (系统配置)',
+            'provider': 'openai',
+            'api_key': DOUBAO_API_KEY,
+            'base_url': DOUBAO_BASE_URL,
+            'model_name': DOUBAO_MODEL,
+            'is_multimodal': True,  # 豆包支持多模态
+            'max_tokens': MAX_TOKENS,
+            'temperature': TEMPERATURE,
+            'top_p': TOP_P,
+            'supports_reasoning': True,  # 豆包支持思考模式
+            'reasoning_param_name': 'reasoning_effort',
+            'reasoning_param_value': REASONING_EFFORT,
+            'enabled': True,
+            'is_system': True  # 标记为系统模型
+        }
+        
+        if 'system_doubao' not in custom_model_manager.models:
+            # 新增
+            success, msg = custom_model_manager.add_model('system_doubao', doubao_config)
+            if success:
+                logger.info("✅ 已导入系统模型: 豆包")
+                imported = True
+        else:
+            # 更新现有配置（保持系统模型最新）
+            existing = custom_model_manager.models['system_doubao']
+            if existing.get('supports_reasoning') != True:
+                logger.info("🔄 更新豆包系统模型配置（添加思考模式支持）")
+                custom_model_manager.models['system_doubao'].update(doubao_config)
+                custom_model_manager._save_config()
+                imported = True
+    
+    # 如果有导入，自动配置题型映射（如果还没有配置）
+    if imported:
+        if not custom_model_manager.get_question_type_models('single'):
+            # 单选题优先DeepSeek Chat（快速）
+            custom_model_manager.set_question_type_models('single', ['system_deepseek_chat'])
+        
+        if not custom_model_manager.get_question_type_models('multiple'):
+            # 多选题使用DeepSeek Reasoner（需要思考）
+            custom_model_manager.set_question_type_models('multiple', ['system_deepseek_reasoner', 'system_deepseek_chat'])
+        
+        if not custom_model_manager.get_question_type_models('judgement'):
+            # 判断题优先DeepSeek Chat
+            custom_model_manager.set_question_type_models('judgement', ['system_deepseek_chat'])
+        
+        if not custom_model_manager.get_question_type_models('completion'):
+            # 填空题优先DeepSeek Chat
+            custom_model_manager.set_question_type_models('completion', ['system_deepseek_chat'])
+        
+        if not custom_model_manager.get_question_type_models('image'):
+            # 图片题使用豆包
+            if DOUBAO_API_KEY:
+                custom_model_manager.set_question_type_models('image', ['system_doubao'])
+        
+        logger.info("✅ 已自动配置题型映射")
+
+# 自动导入系统模型
+try:
+    import_system_models()
+except Exception as e:
+    logger.warning(f"导入系统模型失败: {e}")
+
 # ==================== 安全认证系统 ====================
 
 class SecurityManager:
-    """安全管理器：处理密钥认证和限流"""
+    """
+    安全管理器：处理API密钥认证和请求限流
+    
+    功能：
+        1. 密钥管理：生成、验证和更新访问密钥
+        2. 限流保护：基于IP的失败尝试记录和限流
+        3. 密钥存储：使用SHA256哈希存储密钥，保证安全性
+    
+    Attributes:
+        key_file (str): 密钥文件路径
+        secret_key_hash (str): 密钥的SHA256哈希值
+        failed_attempts (defaultdict): IP到失败时间戳列表的映射
+        rate_limit_attempts (int): 允许的最大连续失败次数
+        rate_limit_window (int): 限流时间窗口（秒）
+    """
     
     def __init__(self, key_file=SECRET_KEY_FILE):
         self.key_file = key_file
@@ -112,7 +615,16 @@ class SecurityManager:
         self._init_secret_key()
     
     def _init_secret_key(self):
-        """初始化密钥：如果不存在则生成，否则加载"""
+        """
+        初始化访问密钥
+        
+        行为：
+            - 如果密钥文件存在：加载现有密钥的哈希值
+            - 如果密钥文件不存在：生成新的随机密钥并保存
+        
+        注意：
+            首次生成时会在日志中显示明文密钥，请妥善保管
+        """
         if os.path.exists(self.key_file):
             # 加载现有密钥
             try:
@@ -128,7 +640,20 @@ class SecurityManager:
             self._generate_new_key()
     
     def _generate_new_key(self):
-        """生成新的64位随机密钥"""
+        """
+        生成新的64位随机密钥
+        
+        过程：
+            1. 使用secrets.token_hex生成256位熵的随机密钥
+            2. 计算密钥的SHA256哈希值用于验证
+            3. 将密钥和哈希值保存到文件
+            4. 在日志中显示明文密钥（仅此一次）
+        
+        安全性：
+            - 使用加密安全的随机数生成器
+            - 只在首次生成时保存明文密钥到文件
+            - 后续只使用哈希值进行验证
+        """
         # 生成64位随机hex字符串（256位熵）
         raw_key = secrets.token_hex(32)  # 32字节 = 64个hex字符
         
@@ -158,7 +683,18 @@ class SecurityManager:
             logger.error(f"❌ 保存密钥失败: {e}")
     
     def verify_key(self, provided_key: str) -> bool:
-        """验证提供的密钥是否正确"""
+        """
+        验证提供的密钥是否正确
+        
+        Args:
+            provided_key: 用户提供的密钥
+        
+        Returns:
+            bool: 密钥正确返回True，否则返回False
+        
+        实现：
+            通过比较SHA256哈希值来验证密钥，避免明文比较
+        """
         if not provided_key:
             return False
         
@@ -269,7 +805,23 @@ QUESTION_TYPES = {
 
 
 class ModelClient:
-    """统一的模型客户端（支持智能模型选择）"""
+    """
+    统一的AI模型客户端（支持多模型和智能选择）
+    
+    功能：
+        1. 多模型支持：DeepSeek、豆包等多个大语言模型
+        2. 智能选择：根据题目内容（文本/图片）自动选择最合适的模型
+        3. 思考模式：支持深度推理模式，提高复杂题目的准确率
+        4. 图片处理：下载并转换图片为base64格式供模型使用
+        5. 重试机制：自动重试失败的请求，提高稳定性
+    
+    Attributes:
+        provider (str): 模型提供商（deepseek/doubao/auto）
+        enable_reasoning (bool): 是否全局启用思考模式
+        is_auto_mode (bool): 是否为智能选择模式
+        clients (dict): 提供商到OpenAI客户端的映射（仅auto模式）
+        models (dict): 提供商到模型名称的映射（仅auto模式）
+    """
     
     def __init__(self, provider: str = MODEL_PROVIDER):
         """
@@ -748,7 +1300,19 @@ class ModelClient:
 
 
 class PromptBuilder:
-    """智能Prompt构建器"""
+    """
+    智能Prompt构建器：根据题型生成优化的提示词
+    
+    功能：
+        为不同题型（单选、多选、判断、填空）生成专门优化的提示词，
+        确保AI模型能够准确理解题目要求并返回正确格式的答案。
+    
+    设计原则：
+        1. 清晰的题目类型说明
+        2. 明确的回答格式要求
+        3. 具体的示例演示
+        4. 避免AI添加额外的解释
+    """
     
     @staticmethod
     def build_prompt(question: str, options: List[str], q_type: str) -> str:
@@ -889,7 +1453,19 @@ class PromptBuilder:
 
 
 class AnswerProcessor:
-    """答案处理器 - 保守清洗，优先匹配原始答案"""
+    """
+    答案处理器：清洗和标准化AI返回的答案
+    
+    策略：
+        - 保守清洗：只移除明显的格式标记，避免误删正确内容
+        - 优先匹配：优先使用原始答案匹配选项，再尝试清洗后匹配
+        - 智能匹配：支持精确匹配、包含匹配、去标点匹配等多种方式
+    
+    功能：
+        1. 清洗答案：移除格式标记（markdown、选项标识等）
+        2. 匹配选项：将AI答案与题目选项进行智能匹配
+        3. 处理特殊题型：针对判断题、多选题等进行特殊处理
+    """
     
     @staticmethod
     def _clean_answer(text: str) -> str:
@@ -1129,7 +1705,23 @@ except Exception as e:
 
 
 def format_time(seconds: float) -> str:
-    """格式化时间显示"""
+    """
+    格式化时间显示为易读格式
+    
+    Args:
+        seconds: 秒数
+    
+    Returns:
+        str: 格式化后的时间字符串
+             - 小于60秒："X.X秒"
+             - 大于等于60秒："X分Y.Y秒"
+    
+    Examples:
+        >>> format_time(45.5)
+        '45.5秒'
+        >>> format_time(125.3)
+        '2分5.3秒'
+    """
     if seconds < 60:
         return f"{seconds:.1f}秒"
     else:
@@ -1138,16 +1730,129 @@ def format_time(seconds: float) -> str:
         return f"{minutes}分{secs:.1f}秒"
 
 
+def _call_custom_model(model_id: str, prompt: str, image_urls: List[str] = None, 
+                       force_reasoning: bool = False) -> Tuple[Optional[str], Optional[str], Optional[Dict[str, int]]]:
+    """
+    调用自定义模型
+    
+    Args:
+        model_id: 自定义模型ID
+        prompt: 提示词
+        image_urls: 图片URL列表
+        force_reasoning: 是否强制启用思考模式
+    
+    Returns:
+        (推理过程, 最终答案, token使用量)
+    """
+    import httpx
+    from openai import OpenAI
+    
+    model = custom_model_manager.get_model(model_id)
+    if not model:
+        logger.error(f"自定义模型不存在: {model_id}")
+        return None, None, None
+    
+    try:
+        # 创建客户端
+        http_client_kwargs = {'timeout': TIMEOUT}
+        if HTTPS_PROXY:
+            http_client_kwargs['proxies'] = HTTPS_PROXY
+        
+        http_client = httpx.Client(**http_client_kwargs)
+        client = OpenAI(
+            api_key=model['api_key'],
+            base_url=model['base_url'],
+            http_client=http_client,
+            max_retries=MAX_RETRIES
+        )
+        
+        # 构建消息
+        messages = [
+            {"role": "system", "content": "你是一个专业、严谨的答题助手。你必须根据题目和选项给出准确的答案，严格按照要求的格式输出，不要有任何多余的内容。"}
+        ]
+        
+        # 处理图片（如果模型支持多模态）
+        if image_urls and model.get('is_multimodal', False):
+            user_content = []
+            # 下载并转换图片为base64
+            for img_url in image_urls:
+                # 使用ModelClient的方法下载图片
+                base64_data = model_client.download_image_as_base64(img_url) if model_client else None
+                if base64_data:
+                    user_content.append({
+                        "type": "image_url",
+                        "image_url": {"url": base64_data}
+                    })
+            user_content.append({"type": "text", "text": prompt})
+            messages.append({"role": "user", "content": user_content})
+        else:
+            messages.append({"role": "user", "content": prompt})
+        
+        # 构建请求参数
+        request_params = {
+            "model": model['model_name'],
+            "messages": messages,
+            "temperature": model.get('temperature', 0.1),
+            "max_tokens": model.get('max_tokens', 2000),
+            "top_p": model.get('top_p', 0.95),
+            "stream": False
+        }
+        
+        # 如果模型支持思考模式并且需要启用
+        if force_reasoning and model.get('supports_reasoning', False):
+            # 使用自定义的思考参数名称和值
+            param_name = model.get('reasoning_param_name', 'reasoning_effort')
+            param_value = model.get('reasoning_param_value', 'medium')
+            request_params[param_name] = param_value
+            logger.info(f"🧠 启用思考模式: {param_name}={param_value}")
+        
+        # 调用API
+        response = client.chat.completions.create(**request_params)
+        
+        # 提取推理过程和答案
+        reasoning_content = None
+        if hasattr(response.choices[0].message, 'reasoning_content'):
+            reasoning_content = response.choices[0].message.reasoning_content
+        
+        answer = response.choices[0].message.content.strip()
+        
+        # 提取token使用量
+        usage_info = None
+        if hasattr(response, 'usage'):
+            usage_info = {
+                'prompt_tokens': response.usage.prompt_tokens if hasattr(response.usage, 'prompt_tokens') else 0,
+                'completion_tokens': response.usage.completion_tokens if hasattr(response.usage, 'completion_tokens') else 0,
+                'total_tokens': response.usage.total_tokens if hasattr(response.usage, 'total_tokens') else 0
+            }
+        else:
+            usage_info = {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
+        
+        return reasoning_content, answer, usage_info
+        
+    except Exception as e:
+        logger.error(f"调用自定义模型失败: {model_id}, 错误: {str(e)}")
+        return None, None, None
+
+
 def check_and_fix_csv_header(csv_file: str, correct_headers: List[str]) -> bool:
     """
-    检查并修复CSV文件表头
+    检查并自动修复CSV文件的表头格式
+    
+    功能：
+        1. 验证CSV文件的表头是否与期望的一致
+        2. 如果不一致，备份原文件并自动修复
+        3. 处理列数不匹配的情况（补齐或截断）
     
     Args:
         csv_file: CSV文件路径
         correct_headers: 正确的表头列表
     
     Returns:
-        True表示表头正确或已修复，False表示修复失败
+        bool: True表示表头正确或已成功修复，False表示修复失败
+    
+    注意：
+        - 修复前会自动创建备份文件 (.backup)
+        - 对于列数不足的行，会填充默认值
     """
     if not os.path.exists(csv_file):
         # 文件不存在，无需修复
@@ -1314,7 +2019,46 @@ def save_to_csv(question: str, options: List[str], q_type: str, raw_answer: str,
 
 @app.route('/api/answer', methods=['POST'])
 def answer_question():
-    """答题接口"""
+    """
+    核心答题API接口
+    
+    功能：
+        1. 接收题目信息（题目、选项、题型、图片）
+        2. 调用AI模型生成答案
+        3. 处理和清洗答案
+        4. 记录答题日志到CSV
+        5. 返回OCS脚本兼容的响应格式
+    
+    请求格式 (JSON):
+        {
+            "question": "题目内容",
+            "options": ["选项1", "选项2", ...],  // 或字符串格式
+            "type": 0,  // 0=单选, 1=多选, 3=填空, 4=判断
+            "images": ["http://..."]  // 可选，图片URL列表
+        }
+    
+    响应格式 (JSON):
+        {
+            "success": true,
+            "question": "题目内容",
+            "answer": "处理后的答案",
+            "type": "single",
+            "raw_answer": "AI原始回答",
+            "model": "deepseek-chat",
+            "provider": "deepseek",
+            "reasoning_used": false,
+            "ai_time": 1.23,
+            "total_time": 1.45,
+            "usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
+            "ocs_format": ["题目", "答案", {...}]
+        }
+    
+    特性：
+        - 自动识别题目中的图片URL
+        - 多选题自动启用思考模式
+        - 图片题自动使用支持多模态的模型
+        - 过滤图标类URL（video.png、icon/等）
+    """
     start_time = time.time()
     
     try:
@@ -1442,29 +2186,98 @@ def answer_question():
         # 构建prompt
         prompt = PromptBuilder.build_prompt(question, options, q_type)
         
-        # 多选题自动启用思考模式
+        # 确定是否启用思考模式
         force_reasoning = False
         reasoning_reasons = []
         
+        # 1. 检查题型的思考配置（优先级最高）
+        type_reasoning_enabled = custom_model_manager.get_question_type_reasoning(q_type)
+        if type_reasoning_enabled:
+            force_reasoning = True
+            reasoning_reasons.append("题型配置")
+        
+        # 2. 兼容旧的自动启用逻辑
         if q_type == "multiple" and model_client.auto_reasoning_for_multiple:
             force_reasoning = True
-            reasoning_reasons.append("多选题")
+            if "多选题" not in reasoning_reasons:
+                reasoning_reasons.append("多选题")
         
-        # 带图片题目自动启用思考模式
+        # 3. 带图片题目自动启用思考模式
         if image_urls and model_client.auto_reasoning_for_images:
             force_reasoning = True
-            reasoning_reasons.append("图片题")
+            if "图片题" not in reasoning_reasons:
+                reasoning_reasons.append("图片题")
         
         if force_reasoning and reasoning_reasons:
             print(f"🧠 {' + '.join(reasoning_reasons)}自动启用深度思考模式")
         
         # 调用模型（计时）
+        # 优先使用自定义模型，支持故障转移
         ai_start = time.time()
-        reasoning, raw_answer, usage_info = model_client.chat(
-            prompt, 
-            force_reasoning=force_reasoning,
-            image_urls=image_urls if image_urls else None
-        )
+        
+        # 获取该题型的所有可用模型（按优先级排序）
+        type_models = custom_model_manager.get_question_type_models(q_type)
+        
+        reasoning = None
+        raw_answer = None
+        usage_info = None
+        custom_model_id = None
+        actual_provider = None
+        model_name = None
+        
+        if type_models:
+            # 尝试使用自定义模型（支持故障转移）
+            for model_id in type_models:
+                model = custom_model_manager.get_model(model_id)
+                if not model or not model.get('enabled', True):
+                    continue
+                
+                # 如果有图片，必须是多模态模型
+                if image_urls and not model.get('is_multimodal', False):
+                    logger.info(f"⏭️  跳过非多模态模型: {model_id}")
+                    continue
+                
+                # 尝试调用模型
+                logger.info(f"🎯 使用自定义模型: {model_id}")
+                print(f"🎯 使用自定义模型: {model_id}")
+                
+                reasoning, raw_answer, usage_info = _call_custom_model(
+                    model_id,
+                    prompt,
+                    image_urls,
+                    force_reasoning
+                )
+                
+                if raw_answer:
+                    # 成功获取答案
+                    custom_model_id = model_id
+                    actual_provider = 'custom'
+                    model_name = model.get('name', model_id)
+                    break
+                else:
+                    # 失败，尝试下一个模型
+                    logger.warning(f"⚠️  模型 {model_id} 调用失败，尝试下一个模型...")
+                    print(f"⚠️  模型 {model_id} 调用失败，尝试下一个模型...")
+        
+        # 如果自定义模型都失败了，使用默认的 model_client
+        if not raw_answer and model_client:
+            # 使用默认的 model_client
+            reasoning, raw_answer, usage_info = model_client.chat(
+                prompt, 
+                force_reasoning=force_reasoning,
+                image_urls=image_urls if image_urls else None
+            )
+            # 确定实际使用的模型名称和提供商
+            if model_client.is_auto_mode:
+                actual_provider = model_client._select_model(image_urls if image_urls else None)[0]
+                if actual_provider in model_client.models:
+                    model_name = model_client.models[actual_provider]
+                else:
+                    model_name = "auto-unknown"
+            else:
+                model_name = model_client.model if not force_reasoning else ('deepseek-reasoner' if model_client.provider == 'deepseek' else model_client.model)
+                actual_provider = model_client.provider
+        
         ai_time = time.time() - ai_start
         
         if not raw_answer:
@@ -1492,25 +2305,7 @@ def answer_question():
         print("="*80 + "\n")
         
         # 记录到CSV文件
-        # 确定实际使用的模型名称
-        if model_client.is_auto_mode:
-            # 智能模式：从响应中获取实际使用的模型
-            actual_provider = model_client._select_model(image_urls if image_urls else None)[0]
-            if actual_provider in model_client.models:
-                model_name = model_client.models[actual_provider]
-            else:
-                model_name = "auto-unknown"
-        else:
-            model_name = model_client.model if not force_reasoning else ('deepseek-reasoner' if model_client.provider == 'deepseek' else model_client.model)
-        
-        reasoning_used = force_reasoning or model_client.enable_reasoning
-        
-        # 确定提供商
-        actual_provider = ''
-        if model_client.is_auto_mode:
-            actual_provider = model_client._select_model(image_urls if image_urls else None)[0]
-        else:
-            actual_provider = model_client.provider
+        reasoning_used = force_reasoning or (model_client.enable_reasoning if not custom_model_id else False)
         
         save_to_csv(
             question=question,
@@ -1553,12 +2348,19 @@ def answer_question():
         # 普通模式：不添加标签，OCS脚本会自动添加"AI"标签（蓝色）
         
         # 模型标签
-        if model_client.is_auto_mode:
+        if custom_model_id:
+            # 自定义模型
+            tags.append({
+                "text": "自定义模型",
+                "title": f"使用自定义模型: {model_name}",
+                "color": "green"
+            })
+        elif model_client.is_auto_mode:
             # 智能模式：显示实际使用的模型
-            actual_provider = model_client._select_model(image_urls if image_urls else None)[0]
-            display_provider = actual_provider.upper()
-            if actual_provider in model_client.models:
-                display_model = model_client.models[actual_provider]
+            auto_provider = model_client._select_model(image_urls if image_urls else None)[0]
+            display_provider = auto_provider.upper()
+            if auto_provider in model_client.models:
+                display_model = model_client.models[auto_provider]
             else:
                 display_model = "unknown"
             
@@ -1573,9 +2375,8 @@ def answer_question():
                 "title": f"实际使用: {display_model}",
                 "color": "green"
             })
-            model_name = display_model
         else:
-            model_name = model_client.model if not force_reasoning else ('deepseek-reasoner' if model_client.provider == 'deepseek' else model_client.model)
+            # 默认模型
             tags.append({
                 "text": model_client.provider.upper(),
                 "title": f"模型: {model_name}",
@@ -1608,10 +2409,13 @@ def answer_question():
         ]
         
         # 返回兼容格式（同时支持OCS格式和原始格式）
-        response_provider = model_client.provider
-        if model_client.is_auto_mode:
-            actual_provider = model_client._select_model(image_urls if image_urls else None)[0]
-            response_provider = f"auto({actual_provider})"
+        if custom_model_id:
+            response_provider = f"custom({custom_model_id})"
+        elif model_client.is_auto_mode:
+            auto_prov = model_client._select_model(image_urls if image_urls else None)[0]
+            response_provider = f"auto({auto_prov})"
+        else:
+            response_provider = model_client.provider
         
         return jsonify({
             "success": True,
@@ -1621,7 +2425,7 @@ def answer_question():
             "raw_answer": raw_answer,
             "model": model_name,
             "provider": response_provider,
-            "reasoning_used": force_reasoning or model_client.enable_reasoning,
+            "reasoning_used": reasoning_used,
             "ai_time": round(ai_time, 2),
             "total_time": round(total_time, 2),
             # Token使用量（从API响应中提取）
@@ -1651,7 +2455,7 @@ def health_check():
     return jsonify({
         "status": "ok" if model_client else "error",
         "service": "OCS AI Answerer (Multi-Model)",
-        "version": "2.2.0",
+        "version": "3.0.0",
         "provider": MODEL_PROVIDER,
         "model": model_client.model if model_client else "未配置",
         "reasoning_enabled": ENABLE_REASONING,
@@ -2109,6 +2913,306 @@ def clear_csv():
         return jsonify({"success": False, "error": f"清空CSV文件失败: {str(e)}"}), 500
 
 
+# ==================== 自定义模型管理API ====================
+
+@app.route('/api/models', methods=['GET'])
+@require_auth
+def get_custom_models():
+    """
+    获取所有自定义模型列表（需要认证）
+    
+    查询参数:
+        enabled_only: 是否只返回启用的模型（true/false）
+    
+    响应:
+        {
+            "success": true,
+            "models": {
+                "model_id": {...},
+                ...
+            },
+            "question_type_models": {...}
+        }
+    """
+    try:
+        enabled_only = request.args.get('enabled_only', 'false').lower() == 'true'
+        models = custom_model_manager.get_all_models(enabled_only=enabled_only)
+        
+        # 移除敏感信息（API密钥只返回部分）
+        safe_models = {}
+        for model_id, config in models.items():
+            safe_config = config.copy()
+            if 'api_key' in safe_config and safe_config['api_key']:
+                # 只显示前4位和后4位
+                key = safe_config['api_key']
+                if len(key) > 8:
+                    safe_config['api_key'] = key[:4] + '*' * (len(key) - 8) + key[-4:]
+            safe_models[model_id] = safe_config
+        
+        return jsonify({
+            "success": True,
+            "models": safe_models,
+            "question_type_models": custom_model_manager.question_type_models
+        })
+    except Exception as e:
+        logger.error(f"获取自定义模型列表失败: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/models/<model_id>', methods=['GET'])
+@require_auth
+def get_custom_model(model_id):
+    """获取单个自定义模型详情（需要认证）"""
+    try:
+        model = custom_model_manager.get_model(model_id)
+        if not model:
+            return jsonify({"success": False, "error": "模型不存在"}), 404
+        
+        # 移除敏感信息
+        safe_model = model.copy()
+        if 'api_key' in safe_model and safe_model['api_key']:
+            key = safe_model['api_key']
+            if len(key) > 8:
+                safe_model['api_key'] = key[:4] + '*' * (len(key) - 8) + key[-4:]
+        
+        return jsonify({
+            "success": True,
+            "model": safe_model
+        })
+    except Exception as e:
+        logger.error(f"获取模型详情失败: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/models', methods=['POST'])
+@require_auth
+def add_custom_model():
+    """
+    添加自定义模型（需要认证）
+    
+    请求体:
+        {
+            "model_id": "my_model",
+            "name": "我的模型",
+            "provider": "openai",
+            "api_key": "sk-xxx",
+            "base_url": "https://api.example.com/v1",
+            "model_name": "gpt-4",
+            "is_multimodal": false,
+            "max_tokens": 2000,
+            "temperature": 0.1,
+            "top_p": 0.95,
+            "supports_reasoning": false
+        }
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "无效的请求数据"}), 400
+        
+        model_id = data.get('model_id')
+        if not model_id:
+            return jsonify({"success": False, "error": "缺少model_id"}), 400
+        
+        # 移除model_id，因为它作为键使用
+        model_config = {k: v for k, v in data.items() if k != 'model_id'}
+        
+        success, message = custom_model_manager.add_model(model_id, model_config)
+        
+        if success:
+            return jsonify({"success": True, "message": message})
+        else:
+            return jsonify({"success": False, "error": message}), 400
+    except Exception as e:
+        logger.error(f"添加自定义模型失败: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/models/<model_id>', methods=['PUT'])
+@require_auth
+def update_custom_model(model_id):
+    """
+    更新自定义模型（需要认证）
+    
+    请求体: 同添加模型，但所有字段都是可选的
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "无效的请求数据"}), 400
+        
+        success, message = custom_model_manager.update_model(model_id, data)
+        
+        if success:
+            return jsonify({"success": True, "message": message})
+        else:
+            return jsonify({"success": False, "error": message}), 400
+    except Exception as e:
+        logger.error(f"更新自定义模型失败: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/models/<model_id>', methods=['DELETE'])
+@require_auth
+def delete_custom_model(model_id):
+    """删除自定义模型（需要认证）"""
+    try:
+        success, message = custom_model_manager.delete_model(model_id)
+        
+        if success:
+            return jsonify({"success": True, "message": message})
+        else:
+            return jsonify({"success": False, "error": message}), 400
+    except Exception as e:
+        logger.error(f"删除自定义模型失败: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/models/question-types/<question_type>', methods=['GET'])
+@require_auth
+def get_question_type_models(question_type):
+    """
+    获取指定题型使用的模型列表（需要认证）
+    
+    路径参数:
+        question_type: single/multiple/judgement/completion/image
+    """
+    try:
+        model_ids = custom_model_manager.get_question_type_models(question_type)
+        return jsonify({
+            "success": True,
+            "question_type": question_type,
+            "model_ids": model_ids
+        })
+    except Exception as e:
+        logger.error(f"获取题型模型列表失败: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/models/question-types/<question_type>', methods=['PUT'])
+@require_auth
+def set_question_type_models(question_type):
+    """
+    设置指定题型使用的模型列表和思考配置（需要认证）
+    
+    请求体:
+        {
+            "model_ids": ["model1", "model2", ...],
+            "enable_reasoning": true/false  // 可选，是否启用思考模式
+        }
+    
+    说明:
+        - 列表按优先级排序，系统会优先使用靠前的模型
+        - 对于图片题，会自动选择支持多模态的模型
+        - enable_reasoning: 为该题型启用思考模式（原生思考模型会自动启用，无需配置）
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "无效的请求数据"}), 400
+        
+        model_ids = data.get('model_ids', [])
+        if not isinstance(model_ids, list):
+            return jsonify({"success": False, "error": "model_ids必须是数组"}), 400
+        
+        # 获取思考模式配置（可选）
+        enable_reasoning = data.get('enable_reasoning', None)
+        
+        success, message = custom_model_manager.set_question_type_models(
+            question_type, 
+            model_ids,
+            enable_reasoning
+        )
+        
+        if success:
+            return jsonify({"success": True, "message": message})
+        else:
+            return jsonify({"success": False, "error": message}), 400
+    except Exception as e:
+        logger.error(f"设置题型模型列表失败: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/models/test/<model_id>', methods=['POST'])
+@require_auth
+def test_custom_model(model_id):
+    """
+    测试自定义模型连接（需要认证）
+    
+    请求体:
+        {
+            "test_prompt": "你好"  // 可选，默认为简单测试
+        }
+    
+    响应:
+        {
+            "success": true,
+            "response": "模型返回内容",
+            "latency": 1.23,
+            "tokens": {...}
+        }
+    """
+    try:
+        model = custom_model_manager.get_model(model_id)
+        if not model:
+            return jsonify({"success": False, "error": "模型不存在"}), 404
+        
+        data = request.get_json() or {}
+        test_prompt = data.get('test_prompt', '请用一句话介绍你自己')
+        
+        # 创建临时客户端测试连接
+        import httpx
+        from openai import OpenAI
+        
+        start_time = time.time()
+        
+        try:
+            test_client = OpenAI(
+                api_key=model['api_key'],
+                base_url=model['base_url'],
+                http_client=httpx.Client(timeout=30.0),
+                max_retries=1
+            )
+            
+            response = test_client.chat.completions.create(
+                model=model['model_name'],
+                messages=[
+                    {"role": "system", "content": "你是一个有帮助的AI助手。"},
+                    {"role": "user", "content": test_prompt}
+                ],
+                max_tokens=100,
+                temperature=0.7
+            )
+            
+            latency = time.time() - start_time
+            
+            result = {
+                "success": True,
+                "response": response.choices[0].message.content.strip(),
+                "latency": round(latency, 2),
+                "tokens": {
+                    "prompt": response.usage.prompt_tokens if hasattr(response.usage, 'prompt_tokens') else 0,
+                    "completion": response.usage.completion_tokens if hasattr(response.usage, 'completion_tokens') else 0,
+                    "total": response.usage.total_tokens if hasattr(response.usage, 'total_tokens') else 0
+                }
+            }
+            
+            logger.info(f"✅ 模型测试成功: {model_id}, 延迟: {latency:.2f}秒")
+            return jsonify(result)
+            
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"❌ 模型测试失败: {model_id}, 错误: {error_msg}")
+            return jsonify({
+                "success": False,
+                "error": f"连接测试失败: {error_msg}"
+            }), 400
+            
+    except Exception as e:
+        logger.error(f"测试模型失败: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 # ==================== 安全认证API ====================
 
 @app.route('/api/auth/verify', methods=['POST'])
@@ -2324,7 +3428,7 @@ if __name__ == '__main__':
     
     print(f"""
     ╔═══════════════════════════════════════════════════════════╗
-    ║       OCS智能答题API服务 - 多模型支持版本 v2.2          ║
+    ║       OCS智能答题API服务 - 多模型支持版本 v3.0              ║
     ╠═══════════════════════════════════════════════════════════╣
     ║  � Vue3 前端: http://{HOST}:{PORT}/                    
     ║  📊 数据可视化: http://{HOST}:{PORT}/viewer             
