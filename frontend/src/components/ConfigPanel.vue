@@ -590,7 +590,6 @@ onUnmounted(() => {
 
 .header-card {
   margin-bottom: 20px;
-  background: white;
 }
 
 .header-card h1 {
@@ -598,18 +597,24 @@ onUnmounted(() => {
   color: #409eff;
 }
 
+.dark .header-card h1 {
+  color: #79bbff;
+}
+
 .header-card p {
   margin: 0;
   color: #909399;
 }
 
+.dark .header-card p {
+  color: #a8abb2;
+}
+
 .config-tabs {
-  background: white;
   margin-bottom: 20px;
 }
 
 .action-card {
-  background: white;
   text-align: center;
 }
 
@@ -619,6 +624,10 @@ onUnmounted(() => {
   align-items: center;
   padding: 10px 0;
   border-bottom: 1px solid #f0f0f0;
+}
+
+.dark .status-item {
+  border-bottom-color: #414243;
 }
 
 .status-item:last-child {

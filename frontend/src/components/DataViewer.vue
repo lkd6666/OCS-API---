@@ -907,6 +907,10 @@ onUnmounted(() => {
   text-align: center;
 }
 
+.dark .header-card h1 {
+  color: #79bbff;
+}
+
 .controls-card,
 .filter-card {
   margin-bottom: 20px;

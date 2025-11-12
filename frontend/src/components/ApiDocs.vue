@@ -280,11 +280,11 @@ const csvClearResponse = `{
 .api-docs {
   max-width: 1400px;
   margin: 0 auto;
+  padding: 20px;
 }
 
 .header-card {
   margin-bottom: 20px;
-  background: white;
 }
 
 .header-card h1 {
@@ -292,13 +292,20 @@ const csvClearResponse = `{
   color: #409eff;
 }
 
+.dark .header-card h1 {
+  color: #79bbff;
+}
+
 .header-card p {
   margin: 0;
   color: #909399;
 }
 
+.dark .header-card p {
+  color: #a8abb2;
+}
+
 .docs-collapse {
-  background: white;
   margin-bottom: 20px;
 }
 
@@ -315,8 +322,16 @@ const csvClearResponse = `{
   color: #303133;
 }
 
+.dark .api-path {
+  color: #e5eaf3;
+}
+
 .api-desc {
   color: #909399;
+}
+
+.dark .api-desc {
+  color: #a8abb2;
 }
 
 .api-content {
@@ -329,14 +344,14 @@ const csvClearResponse = `{
   font-size: 16px;
 }
 
+.dark .api-content h3 {
+  color: #79bbff;
+}
+
 .code-block {
   font-family: 'Courier New', monospace;
   font-size: 13px;
   margin-bottom: 20px;
-}
-
-.tips-card {
-  background: white;
 }
 
 .tips-card ul {
@@ -355,5 +370,10 @@ code {
   border-radius: 3px;
   color: #e6a23c;
   font-family: 'Courier New', monospace;
+}
+
+.dark code {
+  background: #262727;
+  color: #e6a23c;
 }
 </style>

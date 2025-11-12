@@ -1,0 +1,57 @@
+/**
+ * 全局暗黑模式样式
+ * 为整个应用提供一致的暗黑模式体验
+ */
+
+/* Element Plus 暗黑模式自动应用于 .dark 类 */
+
+/* 自定义暗黑模式样式 */
+.dark {
+  color-scheme: dark;
+}
+
+/* 卡片暗黑样式 */
+.dark .el-card {
+  background-color: var(--el-bg-color);
+  border-color: var(--el-border-color);
+}
+
+/* 表格暗黑样式 */
+.dark .el-table {
+  --el-table-bg-color: var(--el-bg-color);
+  --el-table-tr-bg-color: var(--el-bg-color);
+  --el-table-header-bg-color: var(--el-fill-color-light);
+}
+
+/* 对话框暗黑样式 */
+.dark .el-dialog {
+  --el-dialog-bg-color: var(--el-bg-color);
+}
+
+/* 标签页暗黑样式 */
+.dark .el-tabs {
+  --el-tabs-header-bg-color: var(--el-fill-color-light);
+}
+
+/* 下拉菜单暗黑样式 */
+.dark .el-dropdown-menu {
+  background-color: var(--el-bg-color-overlay);
+}
+
+/* 描述列表暗黑样式 */
+.dark .el-descriptions {
+  --el-descriptions-item-bordered-label-background: var(--el-fill-color-light);
+}
+
+/* 主题切换过渡动画 - 仅应用于颜色相关属性，不影响 Element Plus 原有动画 */
+.dark .el-card,
+.dark .el-table,
+.dark .el-dialog,
+.dark .el-tabs,
+.dark .el-input__wrapper,
+.dark .el-textarea__inner,
+.dark .el-select,
+.dark .el-dropdown-menu,
+.dark .el-descriptions {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease !important;
+}

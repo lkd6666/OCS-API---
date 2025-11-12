@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import ConfigPanel from './components/ConfigPanel.vue'
 import DataViewer from './components/DataViewer.vue'
 import ApiDocs from './components/ApiDocs.vue'
+import ModelManager from './components/ModelManager.vue'
 
 const routes = [
   {
@@ -13,6 +14,12 @@ const routes = [
     name: 'Config',
     component: ConfigPanel,
     meta: { title: '配置管理', icon: 'Setting' }
+  },
+  {
+    path: '/models',
+    name: 'Models',
+    component: ModelManager,
+    meta: { title: '模型管理', icon: 'Grid' }
   },
   {
     path: '/viewer',
