@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name       				OCS 网课助手
-// @version    				4.11.69
+// @version    				4.11.77
 // @description				OCS(online-course-script) 网课助手，官网 https://docs.ocsjs.com ，专注于帮助大学生从网课中释放出来 让自己的时间把握在自己的手中，拥有人性化的操作页面，流畅的步骤提示，支持  【超星学习通】 【知到智慧树】 【职教云】 【智慧职教】 【中国大学MOOC】 等网课的学习，作业。具体的功能请查看脚本悬浮窗中的教程页面。
 // @author     				enncy
 // @license    				MIT
@@ -1967,7 +1967,7 @@ var __publicField = (obj, key, value) => {
           this.provider = (0, dom_1$6.h)("select");
           const value = this.store.get(this.key, this.defaultValue);
           for (const item of this.options || []) {
-            const option = (0, dom_1$6.h)("option");
+            const option = ui_1$1.$ui.tooltip((0, dom_1$6.h)("option"));
             if (Array.isArray(item)) {
               option.value = item[0];
               option.textContent = (_a = item[1]) !== null && _a !== void 0 ? _a : item[0];
@@ -3164,7 +3164,9 @@ var __publicField = (obj, key, value) => {
     "reload",
     "waitForRequest",
     "waitForResponse",
-    "waitForSelector"
+    "waitForSelector",
+    "keyboard.type",
+    "keyboard.press"
   ];
   class RemotePlaywright {
     static async getRemotePage(show_debug_cursor, logger) {
@@ -3589,252 +3591,6 @@ var __publicField = (obj, key, value) => {
       }
     };
   }
-  class OCSWorker extends lib.CommonEventEmitter {
-    constructor(opts) {
-      super();
-      this.isRunning = false;
-      this.isClose = false;
-      this.isStop = false;
-      this.totalQuestionCount = 0;
-      this.opts = opts;
-    }
-    async doWork(options) {
-      var _a, _b, _c, _d;
-      this.emit("start");
-      this.isRunning = true;
-      this.once("close", () => {
-        this.isClose = true;
-      });
-      this.on("stop", () => {
-        this.isStop = true;
-      });
-      this.on("continuate", () => {
-        this.isStop = false;
-      });
-      const questionRoots = typeof this.opts.root === "string" ? Array.from(document.querySelectorAll(this.opts.root)) : this.opts.root;
-      this.totalQuestionCount += questionRoots.length;
-      if (options == null ? void 0 : options.enable_debug) {
-        console.debug("开始答题", this);
-        console.debug("题目数量: ", questionRoots.length);
-        console.debug("父节点列表: ", questionRoots);
-      }
-      const results = [];
-      if (questionRoots.length === 0) {
-        throw new Error("未找到任何题目，答题结束。");
-      }
-      for (const questionRoot of questionRoots) {
-        const ctx = {
-          searchInfos: [],
-          root: questionRoot,
-          elements: domSearchAll(this.opts.elements, questionRoot),
-          type: void 0,
-          answerSeparators: this.opts.answerSeparators,
-          answerMatchMode: this.opts.answerMatchMode || "similar"
-        };
-        await ((_b = (_a = this.opts).onElementSearched) == null ? void 0 : _b.call(_a, ctx.elements, questionRoot));
-        ctx.elements.title = (_c = ctx.elements.title) == null ? void 0 : _c.filter(Boolean);
-        ctx.elements.options = (_d = ctx.elements.options) == null ? void 0 : _d.filter(Boolean);
-        if (typeof this.opts.work === "object") {
-          ctx.type = this.opts.work.type === void 0 ? defaultWorkTypeResolver(ctx) : typeof this.opts.work.type === "string" ? this.opts.work.type : this.opts.work.type(ctx);
-        }
-        results.push({
-          requested: false,
-          resolved: false,
-          ctx
-        });
-      }
-      if (options == null ? void 0 : options.enable_debug) {
-        console.debug("上下文已初始化: ", results);
-      }
-      const requestThread = async (index) => {
-        var _a2, _b2, _c2;
-        let error;
-        const result = results[index];
-        const ctx = result.ctx || {};
-        if (this.isClose === true) {
-          this.isRunning = false;
-          return;
-        }
-        if (this.isStop) {
-          await waitForContinuate(() => this.isStop);
-        }
-        ctx.searchInfos = [];
-        if (options == null ? void 0 : options.enable_debug) {
-          console.groupEnd();
-          console.group(
-            "开始搜题: ",
-            (_a2 = ctx.elements.title) == null ? void 0 : _a2.map((t2) => t2 == null ? void 0 : t2.innerText).filter(Boolean).join(", ").slice(0, 20)
-          );
-          console.log("ctx", result.ctx);
-        }
-        try {
-          ctx.searchInfos = await this.opts.answerer(ctx.elements, ctx) || [];
-          ctx.searchInfos.forEach((info) => {
-            info.results = info.results.map((ans) => {
-              ans.answer = ans.answer ? ans.answer.trim() : "";
-              return ans;
-            });
-          });
-        } catch (err) {
-          error = String(err);
-        }
-        result.ctx = ctx;
-        result.requested = true;
-        result.error = error;
-        if (options == null ? void 0 : options.enable_debug) {
-          console.log("搜题结果: ", ctx.searchInfos);
-        }
-        await ((_c2 = (_b2 = this.opts).onResultsUpdate) == null ? void 0 : _c2.call(_b2, results[index], index, results));
-      };
-      const waitForRequested = async (result) => {
-        return new Promise((resolve, reject) => {
-          const interval = setInterval(() => {
-            if ((result == null ? void 0 : result.requested) === true) {
-              clearInterval(interval);
-              clearTimeout(timeout);
-              resolve();
-            }
-          }, 200);
-          const timeout = setTimeout(() => {
-            clearInterval(interval);
-            reject(new Error("答题超时！"));
-          }, 60 * 1e3);
-        });
-      };
-      const resolverThread = async () => {
-        var _a2, _b2, _c2, _d2;
-        for (let index = 0; index < results.length; index++) {
-          const result = results[index];
-          let error;
-          let res;
-          try {
-            if (this.isClose === true) {
-              this.isRunning = false;
-              return;
-            }
-            if (this.isStop) {
-              await waitForContinuate(() => this.isStop);
-            }
-            await waitForRequested(result);
-            if (result.ctx && result.ctx.searchInfos.length !== 0) {
-              if (typeof this.opts.work === "object") {
-                if (result.ctx.elements.options) {
-                  if (result.ctx.type) {
-                    const resolver = defaultQuestionResolve(result.ctx)[result.ctx.type];
-                    const handler = this.opts.work.handler;
-                    res = await resolver(result.ctx.searchInfos, result.ctx.elements.options, handler);
-                  } else {
-                    error = "题目类型解析失败, 请自行提供解析器, 或者忽略此题。";
-                  }
-                } else {
-                  error = "elements.options 为空 ! 使用默认处理器, 必须提供题目选项的选择器。";
-                }
-              } else {
-                const work2 = this.opts.work;
-                res = await work2(result.ctx);
-              }
-            } else {
-              error = "搜索不到答案, 请重新运行, 或者忽略此题。";
-            }
-          } catch (err) {
-            error = (err == null ? void 0 : err.message) || err;
-          }
-          result.error = error;
-          result.result = res || { finish: false };
-          result.resolved = true;
-          if (options == null ? void 0 : options.enable_debug) {
-            console.log(
-              "答题完成: ",
-              (_b2 = (_a2 = result.ctx) == null ? void 0 : _a2.elements.title) == null ? void 0 : _b2.map((t2) => t2 == null ? void 0 : t2.innerText).join(", ").slice(0, 20),
-              result
-            );
-          }
-          await ((_d2 = (_c2 = this.opts).onResultsUpdate) == null ? void 0 : _d2.call(_c2, result, index, results));
-        }
-      };
-      const requestThreadHandler = async () => {
-        const locks = [];
-        const waitForLock = () => {
-          return new Promise((resolve, reject) => {
-            const interval = setInterval(() => {
-              if (locks.length > 0) {
-                const lock = locks.shift();
-                if (lock) {
-                  resolve(lock);
-                  clearInterval(interval);
-                  clearTimeout(timeout);
-                }
-              }
-            }, 100);
-            const timeout = setTimeout(() => {
-              clearInterval(interval);
-              reject(new Error("获取线程锁超时！"));
-            }, 3 * 60 * 1e3);
-          });
-        };
-        const requestThreads = [];
-        for (let index = 0; index < results.length; index++) {
-          requestThreads.push(() => requestThread(index));
-        }
-        for (let index = 0; index < (this.opts.thread || 1); index++) {
-          locks.push(index + 1);
-        }
-        let requestFinished = 0;
-        const promises = [];
-        for (let index = 0; index < (this.opts.thread || 1); index++) {
-          promises.push(async () => {
-            try {
-              while (requestFinished < results.length && requestThreads.length > 0 && this.isClose === false) {
-                const thread = requestThreads.shift();
-                if (thread) {
-                  const lock = await waitForLock();
-                  await thread();
-                  requestFinished++;
-                  locks.push(lock);
-                }
-              }
-            } catch (err) {
-              console.error(err);
-            }
-          });
-        }
-        await Promise.all(promises.map((f) => f()));
-      };
-      await Promise.all([resolverThread(), requestThreadHandler()]);
-      this.isRunning = false;
-      return results;
-    }
-    uploadHandler(options) {
-      var _a;
-      const { results, type, callback } = options;
-      if (type !== "nomove") {
-        let finished = 0;
-        for (const result of results) {
-          if ((_a = result.result) == null ? void 0 : _a.finish) {
-            finished++;
-          }
-        }
-        const rate = results.length === 0 ? 0 : finished / results.length * 100;
-        if (type === "force") {
-          return callback(rate, true);
-        } else {
-          return callback(rate, type === "save" ? false : rate >= parseFloat(type.toString()));
-        }
-      }
-    }
-  }
-  async function waitForContinuate(isStopping) {
-    if (isStopping()) {
-      await new Promise((resolve, reject) => {
-        const interval = setInterval(() => {
-          if (isStopping() === false) {
-            clearInterval(interval);
-            resolve();
-          }
-        }, 200);
-      });
-    }
-  }
   const AnswerWrapperHandlerConfig = {
     timeout_seconds: 180
   };
@@ -4032,6 +3788,255 @@ var __publicField = (obj, key, value) => {
       } else {
         return this.fromObject(value);
       }
+    }
+  }
+  class OCSWorker extends lib.CommonEventEmitter {
+    constructor(opts) {
+      super();
+      this.isRunning = false;
+      this.isClose = false;
+      this.isStop = false;
+      this.totalQuestionCount = 0;
+      this.opts = opts;
+    }
+    async doWork(options) {
+      var _a, _b, _c, _d;
+      this.emit("start");
+      this.isRunning = true;
+      this.once("close", () => {
+        this.isClose = true;
+      });
+      this.on("stop", () => {
+        this.isStop = true;
+      });
+      this.on("continuate", () => {
+        this.isStop = false;
+      });
+      const questionRoots = typeof this.opts.root === "string" ? Array.from(document.querySelectorAll(this.opts.root)) : this.opts.root;
+      this.totalQuestionCount += questionRoots.length;
+      if (options == null ? void 0 : options.enable_debug) {
+        console.debug("开始答题", this);
+        console.debug("题目数量: ", questionRoots.length);
+        console.debug("父节点列表: ", questionRoots);
+      }
+      const results = [];
+      if (questionRoots.length === 0) {
+        throw new Error("未找到任何题目，答题结束。");
+      }
+      for (const questionRoot of questionRoots) {
+        const ctx = {
+          searchInfos: [],
+          root: questionRoot,
+          elements: domSearchAll(this.opts.elements, questionRoot),
+          type: void 0,
+          answerSeparators: this.opts.answerSeparators,
+          answerMatchMode: this.opts.answerMatchMode || "similar"
+        };
+        await ((_b = (_a = this.opts).onElementSearched) == null ? void 0 : _b.call(_a, ctx.elements, questionRoot));
+        ctx.elements.title = (_c = ctx.elements.title) == null ? void 0 : _c.filter(Boolean);
+        ctx.elements.options = (_d = ctx.elements.options) == null ? void 0 : _d.filter(Boolean);
+        if (typeof this.opts.work === "object") {
+          ctx.type = this.opts.work.type === void 0 ? defaultWorkTypeResolver(ctx) : typeof this.opts.work.type === "string" ? this.opts.work.type : this.opts.work.type(ctx);
+        }
+        results.push({
+          requested: false,
+          resolved: false,
+          ctx
+        });
+      }
+      if (options == null ? void 0 : options.enable_debug) {
+        console.debug("上下文已初始化: ", results);
+      }
+      const requestThread = async (index) => {
+        var _a2, _b2, _c2;
+        let error;
+        const result = results[index];
+        const ctx = result.ctx || {};
+        if (this.isClose === true) {
+          this.isRunning = false;
+          return;
+        }
+        if (this.isStop) {
+          await waitForContinuate(() => this.isStop);
+        }
+        ctx.searchInfos = [];
+        if (options == null ? void 0 : options.enable_debug) {
+          console.groupEnd();
+          console.group(
+            "开始搜题: ",
+            (_a2 = ctx.elements.title) == null ? void 0 : _a2.map((t2) => t2 == null ? void 0 : t2.innerText).filter(Boolean).join(", ").slice(0, 20)
+          );
+          console.log("ctx", result.ctx);
+        }
+        try {
+          ctx.searchInfos = await this.opts.answerer(ctx.elements, ctx) || [];
+          ctx.searchInfos.forEach((info) => {
+            info.results = info.results.map((ans) => {
+              ans.answer = ans.answer ? ans.answer.trim() : "";
+              return ans;
+            });
+          });
+        } catch (err) {
+          error = String(err);
+        }
+        result.ctx = ctx;
+        result.requested = true;
+        result.error = error;
+        if (options == null ? void 0 : options.enable_debug) {
+          console.log("搜题结果: ", ctx.searchInfos);
+        }
+        await ((_c2 = (_b2 = this.opts).onResultsUpdate) == null ? void 0 : _c2.call(_b2, results[index], index, results));
+      };
+      const waitForRequested = async (result) => {
+        return new Promise((resolve, reject) => {
+          const interval = setInterval(() => {
+            if ((result == null ? void 0 : result.requested) === true) {
+              clearInterval(interval);
+              clearTimeout(timeout);
+              resolve();
+            }
+          }, 200);
+          const timeout = setTimeout(() => {
+            clearInterval(interval);
+            reject(new Error("答题超时！"));
+          }, (AnswerWrapperHandlerConfig.timeout_seconds + 10) * 1e3);
+        });
+      };
+      const resolverThread = async () => {
+        var _a2, _b2, _c2, _d2;
+        for (let index = 0; index < results.length; index++) {
+          const result = results[index];
+          let error;
+          let res;
+          if (this.isClose === true) {
+            this.isRunning = false;
+            return;
+          }
+          try {
+            if (this.isStop) {
+              await waitForContinuate(() => this.isStop);
+            }
+            await waitForRequested(result);
+          } catch (err) {
+          }
+          try {
+            if (result.ctx && result.ctx.searchInfos.length !== 0) {
+              if (typeof this.opts.work === "object") {
+                if (result.ctx.elements.options) {
+                  if (result.ctx.type) {
+                    const resolver = defaultQuestionResolve(result.ctx)[result.ctx.type];
+                    const handler = this.opts.work.handler;
+                    res = await resolver(result.ctx.searchInfos, result.ctx.elements.options, handler);
+                  } else {
+                    error = "题目类型解析失败, 请自行提供解析器, 或者忽略此题。";
+                  }
+                } else {
+                  error = "elements.options 为空 ! 使用默认处理器, 必须提供题目选项的选择器。";
+                }
+              } else {
+                const work2 = this.opts.work;
+                res = await work2(result.ctx);
+              }
+            } else {
+              error = "搜索不到答案, 请重新运行, 或者忽略此题。";
+            }
+          } catch (err) {
+            error = (err == null ? void 0 : err.message) || err;
+          }
+          result.error = error;
+          result.result = res || { finish: false };
+          result.resolved = true;
+          if (options == null ? void 0 : options.enable_debug) {
+            console.log(
+              "答题完成: ",
+              (_b2 = (_a2 = result.ctx) == null ? void 0 : _a2.elements.title) == null ? void 0 : _b2.map((t2) => t2 == null ? void 0 : t2.innerText).join(", ").slice(0, 20),
+              result
+            );
+          }
+          await ((_d2 = (_c2 = this.opts).onResultsUpdate) == null ? void 0 : _d2.call(_c2, result, index, results));
+        }
+      };
+      const requestThreadHandler = async () => {
+        const locks = [];
+        const waitForLock = () => {
+          return new Promise((resolve, reject) => {
+            const interval = setInterval(() => {
+              if (locks.length > 0) {
+                const lock = locks.shift();
+                if (lock) {
+                  resolve(lock);
+                  clearInterval(interval);
+                  clearTimeout(timeout);
+                }
+              }
+            }, 100);
+            const timeout = setTimeout(() => {
+              clearInterval(interval);
+              reject(new Error("获取线程锁超时！"));
+            }, 3 * 60 * 1e3);
+          });
+        };
+        const requestThreads = [];
+        for (let index = 0; index < results.length; index++) {
+          requestThreads.push(() => requestThread(index));
+        }
+        for (let index = 0; index < (this.opts.thread || 1); index++) {
+          locks.push(index + 1);
+        }
+        let requestFinished = 0;
+        const promises = [];
+        for (let index = 0; index < (this.opts.thread || 1); index++) {
+          promises.push(async () => {
+            try {
+              while (requestFinished < results.length && requestThreads.length > 0 && this.isClose === false) {
+                const thread = requestThreads.shift();
+                if (thread) {
+                  const lock = await waitForLock();
+                  await thread();
+                  requestFinished++;
+                  locks.push(lock);
+                }
+              }
+            } catch (err) {
+              console.error(err);
+            }
+          });
+        }
+        await Promise.all(promises.map((f) => f()));
+      };
+      await Promise.all([resolverThread(), requestThreadHandler()]);
+      this.isRunning = false;
+      return results;
+    }
+    uploadHandler(options) {
+      var _a;
+      const { results, type, callback } = options;
+      if (type !== "nomove") {
+        let finished = 0;
+        for (const result of results) {
+          if ((_a = result.result) == null ? void 0 : _a.finish) {
+            finished++;
+          }
+        }
+        const rate = results.length === 0 ? 0 : finished / results.length * 100;
+        if (type === "force") {
+          return callback(rate, true);
+        } else {
+          return callback(rate, type === "save" ? false : rate >= parseFloat(type.toString()));
+        }
+      }
+    }
+  }
+  async function waitForContinuate(isStopping) {
+    if (isStopping()) {
+      await new Promise((resolve, reject) => {
+        const interval = setInterval(() => {
+          if (isStopping() === false) {
+            clearInterval(interval);
+            resolve();
+          }
+        }, 200);
+      });
     }
   }
   function getDefaults() {
@@ -9888,6 +9893,7 @@ ${content}</tr>
           playbackRate: {
             label: "视频倍速",
             tag: "select",
+            attrs: { title: "目前智慧树倍速最高只能1.5x，超出有封号风险" },
             defaultValue: 1,
             options: [
               ["1", "1 x"],
@@ -10219,6 +10225,7 @@ ${content}</tr>
             label: "视频倍速",
             tag: "select",
             defaultValue: 1,
+            attrs: { title: "目前智慧树倍速最高只能1.5x，超出有封号风险" },
             options: [
               ["1", "1 x"],
               ["1.25", "1.25 x"],
@@ -10617,6 +10624,7 @@ ${content}</tr>
             label: "视频倍速",
             tag: "select",
             defaultValue: 1,
+            attrs: { title: "目前智慧树倍速最高只能1.5x，超出有封号风险" },
             options: [
               ["1", "1 x"],
               ["1.25", "1.25 x"],
@@ -10880,6 +10888,7 @@ ${content}</tr>
             label: "视频倍速",
             tag: "select",
             defaultValue: 1,
+            attrs: { title: "目前智慧树倍速最高只能1.5x，超出有封号风险" },
             options: [
               ["1", "1 x"],
               ["1.25", "1.25 x"],
@@ -11514,6 +11523,18 @@ ${content}</tr>
                 await remotePage.click(opt);
               } else {
                 opt.click();
+              }
+              await lib.$.sleep(200);
+            }
+          } else if (type === "completion") {
+            const opt = option.querySelector("input");
+            if (opt && answer.trim()) {
+              if (remotePage) {
+                await remotePage.click(opt);
+                opt.value = "";
+                await remotePage["keyboard.type"](answer, { delay: Math.floor(Math.random() * 100) });
+              } else {
+                opt.value = answer;
               }
               await lib.$.sleep(200);
             }
@@ -14578,7 +14599,7 @@ ${content}</tr>
           }
         },
         oncomplete() {
-          if (["chaoxing.com/mycourse", "chaoxing.com/mooc2-ans/mycourse"].some((path) => location.href.includes(path))) {
+          if (["mycourse/studentstudy"].some((path) => location.href.includes(path))) {
             lib.$message.success("已进入学习页面，请等待自动运行...");
             return;
           }
@@ -15757,7 +15778,10 @@ ${content}</tr>
       }
       return new Promise((resolve, reject) => {
         const reloadInterval = setInterval(() => {
-          if (["视频文件损坏", "网络错误导致视频下载中途失败"].some((s) => doc.documentElement.innerText.includes(s))) {
+          const errorDiv = doc.querySelector(".vjs-modal-dialog-content");
+          if (["视频文件损坏", "网络错误导致视频下载中途失败", "视频因格式不支持", "网络的问题无法加载"].some(
+            (s) => errorDiv == null ? void 0 : errorDiv.innerText.includes(s)
+          )) {
             $console.error("检测到视频加载失败，即将跳过视频。");
             lib.$message.error("检测到视频加载失败，即将跳过视频。");
             setTimeout(resolve, 3e3);
@@ -17359,7 +17383,7 @@ ${content}</tr>
       if (!current || !total) {
         break;
       }
-      if (current >= total) {
+      if (current >= total - 1) {
         break;
       }
       await $.sleep(pptReadPeriod * 1e3);
@@ -19169,7 +19193,7 @@ search-infos-element .search-result .search-result-answer-tag.yellow {
 search-infos-element .search-result .search-result-answer-tag.purple {
 	background-color: #f9f0ff;
 	border: 1px solid #d3adf7;
-	color: #9b59b6;
+	color: #722ed1;
 }
 search-infos-element .search-result .search-result-answer-tag.orange {
 	background-color: #fff7e6;
